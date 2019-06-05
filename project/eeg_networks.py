@@ -180,7 +180,7 @@ def main():
                 for r, res_key in enumerate(conn_res):
                     graph_res_df.iloc[s, r] = conn_res[res_key]
                 s += 1
-                
+
         final_dict[band] = graph_res_df
 
     with open(os.path.abspath('./../../graph_theory_res.pkl'), 'wb') as f:
