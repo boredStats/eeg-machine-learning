@@ -146,6 +146,7 @@ def clean_df_to_numpy(df):
 
 
 def main():
+    print(networkx.__version__)
     logging.info('%s: Starting script' % proj_utils.ctime())
     bands = ['delta', 'theta', 'alpha', 'beta', 'gamma']
     # data_df = proj_utils.load_connectivity_data(drop_behavior=True)
