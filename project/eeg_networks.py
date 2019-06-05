@@ -125,6 +125,7 @@ def calc_graph_measures(data_matrix, thresh=0):
 def test_graph_functions():
     x = np.random.rand(84, 84)
     test_res = calc_graph_measures(x, thresh=.9)
+    print('Test graph functions...')
     for test_key in test_res:
         print(test_key)
         print(test_res[test_key])
@@ -164,7 +165,7 @@ def main():
 
     test_res = test_graph_functions()
 
-    print('%s: Running graph theory analyses' % proj_utils.ctime())
+    logging.info('%s: Running graph theory analyses' % proj_utils.ctime())
     final_dict = {}
     columns = list(test_res)
     subjects = np.arange(0, len(os.listdir(dpath)))
