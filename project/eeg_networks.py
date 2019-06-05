@@ -7,7 +7,7 @@ import pickle as pkl
 import proj_utils
 
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(filename='./logs/eeg_networks.log', filemode='w', level=logging.INFO)
 
 
 def create_adjacency_dict(data_df, bands):
@@ -76,22 +76,6 @@ def create_subj_adjacency_mats(adj_dict, bands, rois, dpath=None):
         for s, subj in enumerate(subjects):
             key = '%s_%s' % (band, str(subj))
             logging.info('Creating matrix for %s' % key)
-
-            # subject_matrix = pd.DataFrame(index=rois, columns=rois)
-            # for r1, roi_1 in enumerate(rois):
-            #     for r2, roi_2 in enumerate(rois):
-            #         strcmp_1 = "%s_%s_%s" % (band, roi_1, roi_2)
-            #         strcmp_2 = "%s_%s_%s" % (band, roi_2, roi_1)
-            #         for varname in list(band_df):
-            #             if strcmp_1==str(varname) or strcmp_2==str(varname):
-            #                 col = band_df[varname].values
-            #                 val = col[s]
-            #                 subject_matrix.iloc[r1, r2] = val
-            #
-            # for r1 in range(len(rois)):
-            #     for r2 in range(len(rois)):
-            #         if r1 == r2:
-            #             subject_matrix.iloc[r1, r2] = 1
 
             subject_df = _create_subject_matrix(rois, band_df)
             if dpath is not None:
@@ -162,6 +146,7 @@ def clean_df_to_numpy(df):
 
 
 def main():
+    logging.info('%s: Starting script' % proj_utils.ctime())
     bands = ['delta', 'theta', 'alpha', 'beta', 'gamma']
     # data_df = proj_utils.load_connectivity_data(drop_behavior=True)
     # rois = parse_roi_names(list(data_df))
@@ -186,6 +171,7 @@ def main():
         graph_res_df = pd.DataFrame(index=subjects, columns=columns)
         s = 0
         for matrix_file in sorted(os.listdir(dpath)):
+            logging.info('%s: Running graph theory analysis for %s' % (proj_utils.ctime(), str(matrix_file)))
             if band in matrix_file:
                 with open(os.path.join(dpath, matrix_file), 'rb') as f:
                     df = pkl.load(f)
@@ -194,11 +180,13 @@ def main():
                 for r, res_key in enumerate(conn_res):
                     graph_res_df.iloc[s, r] = conn_res[res_key]
                 s += 1
-
+                
         final_dict[band] = graph_res_df
 
     with open(os.path.abspath('./../../graph_theory_res.pkl'), 'wb') as f:
         pkl.dump(final_dict, f)
+
+    logging.info('%s: Finished' % proj_utils.ctime())
 
 
 if __name__ == "__main__":
