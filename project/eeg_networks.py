@@ -104,20 +104,35 @@ def calc_graph_measures(data_matrix, thresh=0):
 
         return np.mean(values)
 
-    below_thresh_indices = data_matrix < thresh
+    below_thresh_indices = np.abs(data_matrix) < thresh
     data_matrix[below_thresh_indices] = 0
     if isinstance(data_matrix, np.ndarray):
         graph = networkx.convert_matrix.from_numpy_matrix(np.real(data_matrix))
     if isinstance(data_matrix, pd.DataFrame):
         graph = networkx.convert_matrix.from_pandas_adjacency(data_matrix)
 
-    graph_dict = {'degree': _avg_values(list(graph.degree)),
-                  'eccentricity': _avg_values(eccentricity(graph)),
-                  'global_efficiency': global_efficiency(graph),
-                  'characteristic_path_length': average_shortest_path_length(graph),
-                  'betweenness_centrality': _avg_values(betweenness_centrality(graph)),
-                  'clustering_coefficient': average_clustering(graph),
-                  'modularity': performance(graph, greedy_modularity_communities(graph))}
+    degree = list(graph.degree)
+    global_eff = global_efficiency(graph)
+    char_path = average_shortest_path_length(graph)
+    b_central = betweenness_centrality(graph)
+    modularity = performance(graph, greedy_modularity_communities(graph))
+    try:
+        ecc = eccentricity(graph)
+    except networkx.exception.NetworkXError:
+        ecc = [0]
+
+    try:
+        clust = average_clustering(graph)
+    except networkx.exception.NetworkXError:
+        clust = 0
+
+    graph_dict = {'degree': _avg_values(degree),
+                  'eccentricity': _avg_values(ecc),
+                  'global_efficiency': global_eff,
+                  'characteristic_path_length': char_path,
+                  'betweenness_centrality': _avg_values(b_central),
+                  'clustering_coefficient': clust,
+                  'modularity': modularity}
 
     return graph_dict
 
