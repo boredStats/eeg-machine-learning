@@ -16,7 +16,7 @@ def ctime():
 
 def load_connectivity_data(currrent_data_path=None, drop_behavior=True):
     if currrent_data_path is None:
-        currrent_data_path = './../../data_raw_labeled.pkl'
+        currrent_data_path = './../data/data_raw_labeled.pkl'
     # data_path = os.path.abspath(currrent_data_path)
     raw_data = np.load(currrent_data_path)
 

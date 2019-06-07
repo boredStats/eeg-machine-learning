@@ -173,7 +173,7 @@ def main():
     bands = ['delta', 'theta', 'alpha', 'beta', 'gamma']
     data_df = proj_utils.load_connectivity_data(drop_behavior=True)
 
-    dpath = os.path.abspath('./../../subject_adjacency_matrices/')
+    dpath = os.path.abspath('./../data/subject_adjacency_matrices/')
     if not os.path.isdir(dpath):
         os.mkdir(dpath)
 
@@ -189,7 +189,7 @@ def main():
     logging.info('%s: Running graph theory analyses' % proj_utils.ctime())
     columns = list(test_res)
     subjects = np.arange(0, len(data_df.index))
-    outpath = './graph_theory_res/'
+    outpath = './../data/graph_theory_res/'
     if not os.path.isdir(outpath):
         os.mkdir(outpath)
 
