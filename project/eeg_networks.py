@@ -146,12 +146,32 @@ def clean_df_to_numpy(df):
     return new_array
 
 
+def run_graph_theory(band, filelist, subjects, columns, outpath):
+    thresholds = [0, .2, .4, .6, .8, .9]
+    for thresh in thresholds:
+        logging.info('%s: Running %s at %.2f' % (proj_utils.ctime(), band, thresh))
+        s = 0
+        graph_df = pd.DataFrame(index=subjects, columns=columns)
+        for adj_file in filelist:
+            if band in adj_file:
+                with open(adj_file, 'rb') as f:
+                    data_df = pkl.load(f)
+
+                conn_res = calc_graph_measures(clean_df_to_numpy(data_df), thresh)
+                for r, res_key in enumerate(conn_res):
+                    graph_df[s, r] = conn_res[res_key]
+                s += 1
+
+        outfile = os.path.join(outpath, 'graph_results_%s_%.2f_thresh' % (band, thresh))
+        with open(outfile, 'wb') as f:
+            pkl.dump(graph_df, f)
+
+
 def main():
-    print(networkx.__version__)
     logging.info('%s: Starting script' % proj_utils.ctime())
+
     bands = ['delta', 'theta', 'alpha', 'beta', 'gamma']
-    # data_df = proj_utils.load_connectivity_data(drop_behavior=True)
-    # rois = parse_roi_names(list(data_df))
+    data_df = proj_utils.load_connectivity_data(drop_behavior=True)
 
     dpath = os.path.abspath('./../../subject_adjacency_matrices/')
     if not os.path.isdir(dpath):
@@ -161,35 +181,25 @@ def main():
     # adj_dict = create_adjacency_dict(data_df, bands)
     #
     # print('%s: Creating subject adjacency matrices' % proj_utils.ctime())
+    # rois = parse_roi_names(list(data_df))
     # create_subj_adjacency_mats(adj_dict, bands, rois, dpath)
 
     test_res = test_graph_functions()
 
     logging.info('%s: Running graph theory analyses' % proj_utils.ctime())
-    final_dict = {}
     columns = list(test_res)
-    subjects = np.arange(0, len(os.listdir(dpath)))
+    subjects = np.arange(0, len(data_df.index))
+    outpath = './graph_theory_res/'
+    if not os.path.isdir(outpath):
+        os.mkdir(outpath)
+
     for band in bands:
-        graph_res_df = pd.DataFrame(index=subjects, columns=columns)
-        s = 0
-        for matrix_file in sorted(os.listdir(dpath)):
-            logging.info('%s: Running graph theory analysis for %s' % (proj_utils.ctime(), str(matrix_file)))
-            if band in matrix_file:
-                with open(os.path.join(dpath, matrix_file), 'rb') as f:
-                    df = pkl.load(f)
-
-                conn_res = calc_graph_measures(clean_df_to_numpy(df))
-                for r, res_key in enumerate(conn_res):
-                    graph_res_df.iloc[s, r] = conn_res[res_key]
-                s += 1
-
-        final_dict[band] = graph_res_df
-
-    with open(os.path.abspath('./../../graph_theory_res.pkl'), 'wb') as f:
-        pkl.dump(final_dict, f)
+        filelist = [f for f in os.listdir(dpath) if band in f]
+        run_graph_theory(band, filelist, subjects, columns, outpath)
 
     logging.info('%s: Finished' % proj_utils.ctime())
 
 
 if __name__ == "__main__":
+    logging.info(networkx.__version__)  # checking venv version
     main()
