@@ -74,7 +74,7 @@ def create_subj_adjacency_mats(adj_dict, bands, rois, dpath=None):
         band_df = adj_dict[band]
         subjects = band_df.index
         for s, subj in enumerate(subjects):
-            key = '%s_%s' % (band, str(subj))
+            key = '%s_%04d' % (band, int(subj))
             logging.info('Creating matrix for %s' % key)
 
             subject_df = _create_subject_matrix(rois, band_df)
@@ -118,7 +118,7 @@ def calc_graph_measures(data_matrix, thresh=0):
     try:
         ecc = eccentricity(graph)
     except networkx.exception.NetworkXError:
-        ecc = [0]
+        ecc = [(0, 0)]
 
     try:
         clust = average_clustering(graph)
@@ -129,7 +129,7 @@ def calc_graph_measures(data_matrix, thresh=0):
         char_path = average_shortest_path_length(graph)
     except networkx.exception.NetworkXError:
         char_path = 0
-    
+
     graph_dict = {'degree': _avg_values(degree),
                   'eccentricity': _avg_values(ecc),
                   'global_efficiency': global_eff,
@@ -181,7 +181,7 @@ def run_graph_theory(band, filelist, subjects, columns, outpath):
                     graph_df[s, r] = conn_res[res_key]
                 s += 1
 
-        outfile = os.path.join(outpath, 'graph_results_%s_%.2f_thresh' % (band, thresh))
+        outfile = os.path.join(outpath, 'graph_results_%s_%.2f_thresh.pkl' % (band, thresh))
         with open(outfile, 'wb') as f:
             pkl.dump(graph_df, f)
 
@@ -196,12 +196,12 @@ def main():
     if not os.path.isdir(dpath):
         os.mkdir(dpath)
 
-    # print('%s: Creating adjacency dicts' % proj_utils.ctime())
-    # adj_dict = create_adjacency_dict(data_df, bands)
-    #
-    # print('%s: Creating subject adjacency matrices' % proj_utils.ctime())
-    # rois = parse_roi_names(list(data_df))
-    # create_subj_adjacency_mats(adj_dict, bands, rois, dpath)
+    print('%s: Creating adjacency dicts' % proj_utils.ctime())
+    adj_dict = create_adjacency_dict(data_df, bands)
+
+    print('%s: Creating subject adjacency matrices' % proj_utils.ctime())
+    rois = parse_roi_names(list(data_df))
+    create_subj_adjacency_mats(adj_dict, bands, rois, dpath)
 
     test_res = test_graph_functions()
 
@@ -213,7 +213,7 @@ def main():
         os.mkdir(outpath)
 
     for band in bands:
-        filelist = [os.path.join(dpath, f) for f in os.listdir(dpath) if band in f]
+        filelist = sorted([os.path.join(dpath, f) for f in os.listdir(dpath) if band in f])
         run_graph_theory(band, filelist, subjects, columns, outpath)
 
     logging.info('%s: Finished' % proj_utils.ctime())
