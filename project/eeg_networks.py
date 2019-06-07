@@ -113,7 +113,6 @@ def calc_graph_measures(data_matrix, thresh=0):
 
     degree = list(graph.degree)
     global_eff = global_efficiency(graph)
-    char_path = average_shortest_path_length(graph)
     b_central = betweenness_centrality(graph)
     modularity = performance(graph, greedy_modularity_communities(graph))
     try:
@@ -126,6 +125,11 @@ def calc_graph_measures(data_matrix, thresh=0):
     except networkx.exception.NetworkXError:
         clust = 0
 
+    try:
+        char_path = average_shortest_path_length(graph)
+    except networkx.exception.NetworkXError:
+        char_path = 0
+    
     graph_dict = {'degree': _avg_values(degree),
                   'eccentricity': _avg_values(ecc),
                   'global_efficiency': global_eff,
