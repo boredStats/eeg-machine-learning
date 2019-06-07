@@ -106,3 +106,4 @@ venv.bak/
 # My project
 .png
 .xlsx
+/data
