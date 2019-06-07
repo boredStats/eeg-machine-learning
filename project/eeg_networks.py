@@ -194,7 +194,7 @@ def main():
         os.mkdir(outpath)
 
     for band in bands:
-        filelist = [f for f in os.listdir(dpath) if band in f]
+        filelist = [os.path.join(dpath, f) for f in os.listdir(dpath) if band in f]
         run_graph_theory(band, filelist, subjects, columns, outpath)
 
     logging.info('%s: Finished' % proj_utils.ctime())
