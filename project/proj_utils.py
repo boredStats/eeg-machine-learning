@@ -27,6 +27,26 @@ def load_connectivity_data(currrent_data_path=None, drop_behavior=True):
     return raw_data
 
 
+def load_behavior_data(current_behavior_path=None):
+    if current_behavior_path is None:
+        current_behavior_path = './../data/features_nonEEG.xlsx'
+
+    sheets = ['vars_continuous', 'vars_categorical']
+    dfs = []
+    for sheet in sheets:
+        if 'categorical' in sheet:
+            dtype = 'category'
+        else:
+            dtype = 'float'
+        behavior_df = pd.read_excel(current_behavior_path, sheet_name=sheet, dtype=dtype)
+        print(behavior_df)
+        dfs.append(behavior_df)
+
+    final = pd.concat(dfs, sort=False, axis=1)
+    final.dropna(inplace=True)
+    return final
+
+
 class VisualizeData:
     # Visualize data before running analyses
     def __init__(self, seaborn_format=None, colors=None):
@@ -70,8 +90,9 @@ def generate_test_df(n=100, c=10, normalize=True):
 def main():
     # Sandbox stuff
     print(ctime())
-    test_df = generate_test_df()
-
+    # test_df = generate_test_df()
+    behavior = load_behavior_data()
+    # print(behavior)
 
 if __name__ == "__main__":
     main()
