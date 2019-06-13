@@ -30,6 +30,24 @@ def run_second_level(group_df):
     return res_df
 
 
+def full_matrix_second_level(data_df, output_path=None):
+    logging.info('%s: Running second level for all subjects' % proj_utils.ctime())
+    full_matrix_res = run_second_level(data_df)
+    if output_path is not None:
+        with open(output_path, 'wb') as f:
+            pkl.dump(full_matrix_res, f)
+
+
+def group_matrices_second_level(data_df, index_dict, output_dir=None):
+    for key in index_dict:
+        logging.info('%s: Running second level for %s' % (proj_utils.ctime(), key))
+        index_list = index_dict[key]
+        res_df = run_second_level(create_new_df_from_indices(index_list, data_df))
+
+        with open(os.path.join(output_dir, '%s.pkl' % key), 'wb') as file:
+            pkl.dump(res_df, file)
+
+
 def fdr_thresh(output_path, alpha=.00001):
     from statsmodels.stats.multitest import fdrcorrection
 
@@ -76,18 +94,21 @@ def main():
         os.mkdir(output_dir)
 
     data_df = proj_utils.load_connectivity_data()
-    print(data_df.head())
-    index_dict = proj_utils.get_group_indices(full_sides=False)
-    for key in index_dict:
-        indices = index_dict[key]
-        print(key, len(indices))
-        logging.info('%s: Running second level for %s' % (proj_utils.ctime(), key))
-        index_list = index_dict[key]
-        res_df = run_second_level(create_new_df_from_indices(index_list, data_df))
+    full_matrix_second_level(data_df, output_path=os.path.join(output_dir, 'all_subjects_second_level.pkl'))
 
-        with open(os.path.join(output_dir, '%s.pkl' % key), 'wb') as file:
-            pkl.dump(res_df, file)
-    fdr_thresh(output_dir)
+    index_dict = proj_utils.get_group_indices(full_sides=False)
+    group_matrices_second_level(data_df, index_dict, output_dir)
+
+    # for key in index_dict:
+    #     indices = index_dict[key]
+    #     print(key, len(indices))
+    #     logging.info('%s: Running second level for %s' % (proj_utils.ctime(), key))
+    #     index_list = index_dict[key]
+    #     res_df = run_second_level(create_new_df_from_indices(index_list, data_df))
+    #
+    #     with open(os.path.join(output_dir, '%s.pkl' % key), 'wb') as file:
+    #         pkl.dump(res_df, file)
+    # fdr_thresh(output_dir)
 
 
 main()
