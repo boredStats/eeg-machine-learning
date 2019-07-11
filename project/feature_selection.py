@@ -6,9 +6,10 @@ import pandas as pd
 import proj_utils as pu
 import tensorflow as tf
 from tensorflow import keras
+from imblearn.pipeline import make_pipeline
 from imblearn.over_sampling import RandomOverSampler
 from imblearn.under_sampling import RandomUnderSampler
-from sklearn import ensemble, feature_selection, model_selection, preprocessing, pipeline, svm
+from sklearn import ensemble, feature_selection, model_selection, preprocessing, pipeline, svm, metrics
 
 
 def warn(*args, **kwargs):
@@ -69,21 +70,23 @@ def pipeline_test():
     target = behavior_data['tinnitus_type']
     # target = behavior_data['tinnitus_side'].values.astype(float) * 2
 
-    x_train, x_test, y_train, y_test = model_selection.train_test_split(conn_data, target, test_size=0.2)
+    # x_train, x_test, y_train, y_test = model_selection.train_test_split(conn_data, target, test_size=0.2)
 
-    preproc = preprocessing.StandardScaler().fit(x_train)
-    x_trainz = preproc.transform(x_train)
-    x_testz = preproc.transform(x_test)
+    # preproc = preprocessing.StandardScaler().fit(x_train)
+    # x_trainz = preproc.transform(x_train)
+    # x_testz = preproc.transform(x_test)
 
-    m = math.floor(conn_data.shape[1] * 0.1)  # max_number of features to extract
+    # m = math.floor(conn_data.shape[1] * 0.1)  # max_number of features to extract
 
     # ---Pipeline objects--- #
     variance_filter = feature_selection.VarianceThreshold(threshold=(.8 * (1 - .8)))
     tree_classifier = ensemble.ExtraTreesClassifier(n_estimators=100)
     feature_select = feature_selection.SelectFromModel(tree_classifier, prefit=False)  # , max_features=m)
-    svm_classifier = svm.LinearSVC(multi_class='crammer_singer')
+    svm_classifier = svm.LinearSVC()  # multi_class='crammer_singer'
+    resampler = RandomOverSampler(sampling_strategy='not majority')
 
     steps = [
+        # ('resample data', resampler),
         ('whiten data', preprocessing.StandardScaler()),
         ('variance cleaning', variance_filter),
         ('extra trees cleaning', feature_select),
@@ -129,17 +132,12 @@ def feature_selection_pipeline(conn_data, target):
     # Variance thresh
     sel = feature_selection.VarianceThreshold(threshold=(.8 * (1 - .8)))
     conn_data_vt = sel.fit_transform(conn_data)
-    x_train, x_test, y_train, y_test = model_selection.train_test_split(conn_data_vt, target, test_size=0.2)
+    x_train, x_test, y_train, y_test = model_selection.train_test_split(conn_data_vt, target, test_size=0.2, stratify=target)
 
     # Whiten data
     preproc = preprocessing.StandardScaler().fit(x_train)
     x_train_z = preproc.fit_transform(x_train)
     x_test_z = preproc.transform(x_test)
-
-    # # Variance thresh
-    # sel = feature_selection.VarianceThreshold(threshold=(.8 * (1 - .8)))
-    # x_train_vt = sel.fit_transform(x_train_z)
-    # x_test_vt = sel.fit_transform(x_test_z)
 
     # Feature selection with extra trees
     clf = ensemble.ExtraTreesClassifier(n_estimators=100)
@@ -177,23 +175,32 @@ def classify_with_svm_resampling():
 
     resampler = RandomOverSampler(sampling_strategy='not majority')
     # resampler = RandomUnderSampler(sampling_strategy='not minority')
-    n_iters, n = 10, 0
-    scores = []
-    while n != n_iters:
-        x_res, y_res = resampler.fit_resample(conn_data, target)
-        x_train_fs, x_test_fs, y_train, y_test = feature_selection_pipeline(x_res, y_res)
 
-        svm_classifier = svm.LinearSVC()
-        svm_classifier.fit(x_train_fs, y_train)
+    x_res, y_res = resampler.fit_resample(conn_data, target)
+    x_train_fs, x_test_fs, y_train, y_test = feature_selection_pipeline(x_res, y_res)
 
-        predicted = svm_classifier.predict(x_test_fs)
-        score = svm_classifier.score(x_test_fs, y_test)
-        scores.append(score)
-        print('LinearSVC score:', score)
+    svm_classifier = svm.LinearSVC()
+    svm_classifier.fit(x_train_fs, y_train)
 
-        del x_res, y_res, x_train_fs, x_test_fs, y_train, y_test
+    predicted = svm_classifier.predict(x_test_fs)
+    score = svm_classifier.score(x_test_fs, y_test)
+    sc = metrics.balanced_accuracy_score(y_test, predicted)
+    print('LinearSVC accuracy:', score)
+    print('LinearSVC balanced accuracy:', sc)
 
-    print('Mean LinearSVC score:', np.mean(scores))
+    # # ---Pipeline objects--- #
+    scaler = preprocessing.StandardScaler()
+    variance_filter = feature_selection.VarianceThreshold(threshold=(.8 * (1 - .8)))
+    tree_classifier = ensemble.ExtraTreesClassifier(n_estimators=100)
+    feature_select = feature_selection.SelectFromModel(tree_classifier)
+    svm_classifier = svm.LinearSVC()  # multi_class='crammer_singer'
+    resampler = RandomOverSampler(sampling_strategy='not majority')
+    stratify = model_selection.StratifiedKFold(n_splits=3)
+
+    pipe = make_pipeline(resampler, variance_filter, scaler, feature_select, svm_classifier)
+    scores = model_selection.cross_val_score(pipe, conn_data, target, cv=5, verbose=1, n_jobs=-1)
+    print(scores)
+    print('Mean cross-val score:', scores.mean())
 
 
 def deep_learning():
@@ -202,7 +209,9 @@ def deep_learning():
     target = np.add(behavior_data['tinnitus_type'].values.astype(int), 1)
     # target = np.add((behavior_data['tinnitus_side'].values.astype(float) * 2), 2)
 
-    x_train_fs, x_test_fs, y_train, y_test = feature_selection_pipeline(conn_data, target)
+    resampler = RandomOverSampler(sampling_strategy='not majority')
+    x_res, y_res = resampler.fit_resample(conn_data, target)
+    x_train_fs, x_test_fs, y_train, y_test = feature_selection_pipeline(x_res, y_res)
 
     # --- Deep learning --- #
     n_labels = len(pd.unique(target))
@@ -231,6 +240,6 @@ if __name__ == "__main__":
 
     # feature_selection_test()
     # pipeline_test()
-    classify_with_svm()
+    # classify_with_svm()
     # deep_learning()
     classify_with_svm_resampling()
