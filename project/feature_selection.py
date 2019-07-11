@@ -1,9 +1,22 @@
 import os
 import math
+import warnings
 import numpy as np
 import pandas as pd
 import proj_utils as pu
+import tensorflow as tf
+from tensorflow import keras
+from imblearn.over_sampling import RandomOverSampler
+from imblearn.under_sampling import RandomUnderSampler
 from sklearn import ensemble, feature_selection, model_selection, preprocessing, pipeline, svm
+
+
+def warn(*args, **kwargs):
+    # Hide warnings from sklearn -_-
+    pass
+
+
+warnings.warn = warn
 
 
 def dummy_code_categorical(data):
@@ -111,10 +124,113 @@ def feature_selection_test():
     print(clf_cleaned.shape)
 
 
+def feature_selection_pipeline(conn_data, target):
+    # --- sklearn pipeline --- #
+    # Variance thresh
+    sel = feature_selection.VarianceThreshold(threshold=(.8 * (1 - .8)))
+    conn_data_vt = sel.fit_transform(conn_data)
+    x_train, x_test, y_train, y_test = model_selection.train_test_split(conn_data_vt, target, test_size=0.2)
+
+    # Whiten data
+    preproc = preprocessing.StandardScaler().fit(x_train)
+    x_train_z = preproc.fit_transform(x_train)
+    x_test_z = preproc.transform(x_test)
+
+    # # Variance thresh
+    # sel = feature_selection.VarianceThreshold(threshold=(.8 * (1 - .8)))
+    # x_train_vt = sel.fit_transform(x_train_z)
+    # x_test_vt = sel.fit_transform(x_test_z)
+
+    # Feature selection with extra trees
+    clf = ensemble.ExtraTreesClassifier(n_estimators=100)
+    model = feature_selection.SelectFromModel(clf, threshold="2*mean")
+
+    # Transform train and test data with feature selection model
+    x_train_fs = model.fit_transform(x_train_z, y_train)
+    x_test_fs = model.transform(x_test_z)
+
+    del clf, model
+
+    return x_train_fs, x_test_fs, y_train, y_test
+
+
+def classify_with_svm():
+    behavior_data, conn_data = load_data()
+    conn_data = conn_data.values.astype(float)
+    target = np.add(behavior_data['tinnitus_type'].values.astype(int), 1)
+    # target = np.add((behavior_data['tinnitus_side'].values.astype(float) * 2), 2)
+
+    x_train_fs, x_test_fs, y_train, y_test = feature_selection_pipeline(conn_data, target)
+    svm_classifier = svm.LinearSVC()
+    svm_classifier.fit(x_train_fs, y_train)
+
+    predicted = svm_classifier.predict(x_test_fs)
+    score = svm_classifier.score(x_test_fs, y_test)
+    print('LinearSVC score:', score)
+    del x_train_fs, x_test_fs, y_train, y_test
+
+
+def classify_with_svm_resampling():
+    behavior_data, conn_data = load_data()
+    conn_data = conn_data.values.astype(float)
+    target = np.add(behavior_data['tinnitus_type'].values.astype(int), 1)
+
+    resampler = RandomOverSampler(sampling_strategy='not majority')
+    # resampler = RandomUnderSampler(sampling_strategy='not minority')
+    n_iters, n = 10, 0
+    scores = []
+    while n != n_iters:
+        x_res, y_res = resampler.fit_resample(conn_data, target)
+        x_train_fs, x_test_fs, y_train, y_test = feature_selection_pipeline(x_res, y_res)
+
+        svm_classifier = svm.LinearSVC()
+        svm_classifier.fit(x_train_fs, y_train)
+
+        predicted = svm_classifier.predict(x_test_fs)
+        score = svm_classifier.score(x_test_fs, y_test)
+        scores.append(score)
+        print('LinearSVC score:', score)
+
+        del x_res, y_res, x_train_fs, x_test_fs, y_train, y_test
+
+    print('Mean LinearSVC score:', np.mean(scores))
+
+
+def deep_learning():
+    behavior_data, conn_data = load_data()
+    conn_data = conn_data.values.astype(float)
+    target = np.add(behavior_data['tinnitus_type'].values.astype(int), 1)
+    # target = np.add((behavior_data['tinnitus_side'].values.astype(float) * 2), 2)
+
+    x_train_fs, x_test_fs, y_train, y_test = feature_selection_pipeline(conn_data, target)
+
+    # --- Deep learning --- #
+    n_labels = len(pd.unique(target))
+    print('N classes:', n_labels)
+    model = keras.Sequential([
+        keras.layers.Dense(128, activation=tf.nn.relu),
+        keras.layers.Dense(n_labels, activation=tf.nn.softmax)
+    ])
+
+    model.compile(
+        optimizer='adam',
+        loss='sparse_categorical_crossentropy',
+        metrics=['accuracy']
+    )
+
+    model.fit(x_train_fs, y_train, epochs=5)
+
+    test_loss, test_acc = model.evaluate(x_test_fs, y_test)
+    print('Test accuracy:', test_acc)
+
+
 if __name__ == "__main__":
     output_dir = './../data/feature_selection/'
     if not os.path.isdir(output_dir):
         os.mkdir(output_dir)
 
     # feature_selection_test()
-    pipeline_test()
+    # pipeline_test()
+    classify_with_svm()
+    # deep_learning()
+    classify_with_svm_resampling()
