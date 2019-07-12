@@ -1,23 +1,11 @@
 import os
-import math
-import warnings
 import numpy as np
 import pandas as pd
 import proj_utils as pu
 import tensorflow as tf
 from tensorflow import keras
-from imblearn.pipeline import make_pipeline
 from imblearn.over_sampling import RandomOverSampler
-from imblearn.under_sampling import RandomUnderSampler
 from sklearn import ensemble, feature_selection, model_selection, preprocessing, pipeline, svm, metrics
-
-
-def warn(*args, **kwargs):
-    # Hide warnings from sklearn -_-
-    pass
-
-
-warnings.warn = warn
 
 
 def dummy_code_categorical(data):
@@ -70,13 +58,11 @@ def pipeline_test():
     target = behavior_data['tinnitus_type']
     # target = behavior_data['tinnitus_side'].values.astype(float) * 2
 
-    # x_train, x_test, y_train, y_test = model_selection.train_test_split(conn_data, target, test_size=0.2)
+    x_train, x_test, y_train, y_test = model_selection.train_test_split(conn_data, target, test_size=0.2)
 
-    # preproc = preprocessing.StandardScaler().fit(x_train)
-    # x_trainz = preproc.transform(x_train)
-    # x_testz = preproc.transform(x_test)
-
-    # m = math.floor(conn_data.shape[1] * 0.1)  # max_number of features to extract
+    preproc = preprocessing.StandardScaler().fit(x_train)
+    x_trainz = preproc.transform(x_train)
+    x_testz = preproc.transform(x_test)
 
     # ---Pipeline objects--- #
     variance_filter = feature_selection.VarianceThreshold(threshold=(.8 * (1 - .8)))
@@ -94,14 +80,16 @@ def pipeline_test():
     ]
 
     pipe = pipeline.Pipeline(steps=steps)
+    pipe.fit(x_trainz, y_train)
+
+    prediction = pipe.predict(x_testz)
+    print(prediction)
+    score = pipe.score(x_testz, y_test)
+    print(score)
+
+    # KFold cross-val
     scores = model_selection.cross_val_score(pipe, conn_data, target, cv=3)
     print(scores.mean())
-    # pipe.fit(x_trainz, y_train)
-    #
-    # prediction = pipe.predict(x_testz)
-    # print(prediction)
-    # score = pipe.score(x_testz, y_test)
-    # print(score)
 
 
 def feature_selection_test():
@@ -147,8 +135,6 @@ def feature_selection_pipeline(conn_data, target):
     x_train_fs = model.fit_transform(x_train_z, y_train)
     x_test_fs = model.transform(x_test_z)
 
-    del clf, model
-
     return x_train_fs, x_test_fs, y_train, y_test
 
 
@@ -174,33 +160,88 @@ def classify_with_svm_resampling():
     target = np.add(behavior_data['tinnitus_type'].values.astype(int), 1)
 
     resampler = RandomOverSampler(sampling_strategy='not majority')
-    # resampler = RandomUnderSampler(sampling_strategy='not minority')
 
-    x_res, y_res = resampler.fit_resample(conn_data, target)
-    x_train_fs, x_test_fs, y_train, y_test = feature_selection_pipeline(x_res, y_res)
+    n_iters, n = 5, 0
+    scores, balanced_scores, balanced_chance = [], [], []
+    while n != n_iters:
+        # LeavePOut "algorithm"
+        x_res, y_res = resampler.fit_resample(conn_data, target)
+        x_train_fs, x_test_fs, y_train, y_test = feature_selection_pipeline(x_res, y_res)
 
-    svm_classifier = svm.LinearSVC()
-    svm_classifier.fit(x_train_fs, y_train)
+        svm_classifier = svm.LinearSVC(multi_class='crammer_singer')
+        svm_classifier.fit(x_train_fs, y_train)
 
-    predicted = svm_classifier.predict(x_test_fs)
-    score = svm_classifier.score(x_test_fs, y_test)
-    sc = metrics.balanced_accuracy_score(y_test, predicted)
-    print('LinearSVC accuracy:', score)
-    print('LinearSVC balanced accuracy:', sc)
+        predicted = svm_classifier.predict(x_test_fs)
+        score = svm_classifier.score(x_test_fs, y_test)
+        balanced = metrics.balanced_accuracy_score(y_test, predicted)
+        chance = metrics.balanced_accuracy_score(y_test, predicted, adjusted=True)
+        print('LinearSVC accuracy:', score)
+        print('LinearSVC balanced accuracy:', balanced)
+        print('LinearSVC balanced chance:', chance)
+        scores.append(score)
+        balanced_scores.append(balanced)
+        balanced_chance.append(chance)
+        n += 1
 
-    # # ---Pipeline objects--- #
-    scaler = preprocessing.StandardScaler()
-    variance_filter = feature_selection.VarianceThreshold(threshold=(.8 * (1 - .8)))
-    tree_classifier = ensemble.ExtraTreesClassifier(n_estimators=100)
-    feature_select = feature_selection.SelectFromModel(tree_classifier)
-    svm_classifier = svm.LinearSVC()  # multi_class='crammer_singer'
+    print('Mean accuracy:', np.mean(scores))
+    print('Mean balanced accuracy:', np.mean(balanced_scores))
+    print('Mean chance accuracy:', np.mean(balanced_chance))
+
+
+def classify_with_svm_resampling_and_kfolds():
+    behavior_data, conn_data = load_data()
+    conn_data = conn_data.values.astype(float)
+    # target = np.add(behavior_data['tinnitus_type'].values.astype(int), 1)
+    target = behavior_data['tinnitus_side'].values.astype(float) * 2
+
     resampler = RandomOverSampler(sampling_strategy='not majority')
-    stratify = model_selection.StratifiedKFold(n_splits=3)
+    x_res, y_res = resampler.fit_resample(conn_data, target)
 
-    pipe = make_pipeline(resampler, variance_filter, scaler, feature_select, svm_classifier)
-    scores = model_selection.cross_val_score(pipe, conn_data, target, cv=5, verbose=1, n_jobs=-1)
-    print(scores)
-    print('Mean cross-val score:', scores.mean())
+    skf = model_selection.StratifiedKFold(n_splits=3)
+    skf.get_n_splits(x_res, y_res)
+    scores, balanced_scores, balanced_chance, f1s = [], [], [], []
+
+    for train_idx, test_idx in skf.split(x_res, y_res):
+        x_train, x_test = x_res[train_idx], x_res[test_idx]
+        y_train, y_test = y_res[train_idx], y_res[test_idx]
+
+        preproc = preprocessing.StandardScaler().fit(x_train)
+        x_train_z = preproc.fit_transform(x_train)
+        x_test_z = preproc.transform(x_test)
+
+        # Feature selection with extra trees
+        clf = ensemble.ExtraTreesClassifier(n_estimators=100)
+        model = feature_selection.SelectFromModel(clf, threshold="2*mean")
+
+        # Transform train and test data with feature selection model
+        x_train_fs = model.fit_transform(x_train_z, y_train)
+        x_test_fs = model.transform(x_test_z)
+        if x_train_fs.shape[0] > x_train_fs.shape[1]:
+            dual = False
+        else:
+            dual = True
+
+        svm_classifier = svm.LinearSVC(C=1.0, dual=dual, fit_intercept=False)
+        svm_classifier.fit(x_train_fs, y_train)
+
+        predicted = svm_classifier.predict(x_test_fs)
+        score = svm_classifier.score(x_test_fs, y_test)
+        balanced = metrics.balanced_accuracy_score(y_test, predicted)
+        chance = metrics.balanced_accuracy_score(y_test, predicted, adjusted=True)
+        f1 = metrics.f1_score(y_test, predicted, average=None)  # , labels=['T', 'T+N', 'N']
+        print('LinearSVC accuracy:', score)
+        print('LinearSVC balanced accuracy:', balanced)
+        print('LinearSVC balanced chance:', chance)
+        print('LinearSVC F1 score:', f1)
+        scores.append(score)
+        balanced_scores.append(balanced)
+        balanced_chance.append(chance)
+        f1s.append(f1)
+
+    print('Mean accuracy:', np.mean(scores))
+    print('Mean balanced accuracy:', np.mean(balanced_scores))
+    print('Mean chance accuracy:', np.mean(balanced_chance))
+    print('Mean F1 score:', np.mean(f1s))
 
 
 def deep_learning():
@@ -242,4 +283,5 @@ if __name__ == "__main__":
     # pipeline_test()
     # classify_with_svm()
     # deep_learning()
-    classify_with_svm_resampling()
+    # classify_with_svm_resampling()
+    classify_with_svm_resampling_and_kfolds()
