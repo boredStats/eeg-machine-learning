@@ -1,6 +1,7 @@
 import os
 import numpy as np
 import pandas as pd
+import pickle as pkl
 import proj_utils as pu
 import tensorflow as tf
 from tensorflow import keras
@@ -188,20 +189,30 @@ def classify_with_svm_resampling():
     print('Mean chance accuracy:', np.mean(balanced_chance))
 
 
-def classify_with_svm_resampling_and_kfolds():
+def classify_with_svm_resampling_and_kfolds(t='type', outdir=None):
     behavior_data, conn_data = load_data()
     conn_data = conn_data.values.astype(float)
-    # target = np.add(behavior_data['tinnitus_type'].values.astype(int), 1)
-    target = behavior_data['tinnitus_side'].values.astype(float) * 2
+
+    if t is 'type':
+        target = np.add(behavior_data['tinnitus_type'].values.astype(int), 1)
+    elif t is 'side':
+        target = behavior_data['tinnitus_side'].values.astype(float) * 2
+    else:
+        raise ValueError('t must either be type or side')
 
     resampler = RandomOverSampler(sampling_strategy='not majority')
     x_res, y_res = resampler.fit_resample(conn_data, target)
 
-    skf = model_selection.StratifiedKFold(n_splits=3)
+    skf = model_selection.LeaveOneOut()
     skf.get_n_splits(x_res, y_res)
     scores, balanced_scores, balanced_chance, f1s = [], [], [], []
-
+    fold_count = 1
     for train_idx, test_idx in skf.split(x_res, y_res):
+        fname = os.path.join(outdir, '%s_LOO_fold%04d.pkl' % (t, fold_count))
+        if os.path.exists(fname):
+            print('File exists, passing')
+            continue
+
         x_train, x_test = x_res[train_idx], x_res[test_idx]
         y_train, y_test = y_res[train_idx], y_res[test_idx]
 
@@ -216,27 +227,33 @@ def classify_with_svm_resampling_and_kfolds():
         # Transform train and test data with feature selection model
         x_train_fs = model.fit_transform(x_train_z, y_train)
         x_test_fs = model.transform(x_test_z)
-        if x_train_fs.shape[0] > x_train_fs.shape[1]:
-            dual = False
-        else:
-            dual = True
 
-        svm_classifier = svm.LinearSVC(C=1.0, dual=dual, fit_intercept=False)
+        svm_classifier = svm.LinearSVC(fit_intercept=False)
         svm_classifier.fit(x_train_fs, y_train)
 
         predicted = svm_classifier.predict(x_test_fs)
         score = svm_classifier.score(x_test_fs, y_test)
         balanced = metrics.balanced_accuracy_score(y_test, predicted)
         chance = metrics.balanced_accuracy_score(y_test, predicted, adjusted=True)
-        f1 = metrics.f1_score(y_test, predicted, average=None)  # , labels=['T', 'T+N', 'N']
-        print('LinearSVC accuracy:', score)
-        print('LinearSVC balanced accuracy:', balanced)
-        print('LinearSVC balanced chance:', chance)
-        print('LinearSVC F1 score:', f1)
-        scores.append(score)
-        balanced_scores.append(balanced)
-        balanced_chance.append(chance)
-        f1s.append(f1)
+        f1 = metrics.f1_score(y_test, predicted, average=None)
+
+        if outdir is not None:
+            res_dict = {
+                'accuracy scores': score,
+                'balanced accuracy scores': balanced,
+                'chance accuracy scores': chance,
+                'f1 scores': f1,
+                'svm classifier object': svm_classifier
+            }
+            with open(fname, 'wb') as file:
+                pkl.dump(res_dict, file)
+        else:
+            scores.append(score)
+            balanced_scores.append(balanced)
+            balanced_chance.append(chance)
+            f1s.append(f1)
+
+        fold_count += 1
 
     print('Mean accuracy:', np.mean(scores))
     print('Mean balanced accuracy:', np.mean(balanced_scores))
@@ -284,4 +301,4 @@ if __name__ == "__main__":
     # classify_with_svm()
     # deep_learning()
     # classify_with_svm_resampling()
-    classify_with_svm_resampling_and_kfolds()
+    classify_with_svm_resampling_and_kfolds(outdir=output_dir)
