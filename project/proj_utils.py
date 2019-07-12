@@ -6,6 +6,7 @@ import pandas as pd
 import seaborn as sns
 import matplotlib as mpl
 from scipy.stats import zscore
+from copy import deepcopy
 
 
 def ctime():
@@ -18,7 +19,7 @@ def load_connectivity_data(currrent_data_path=None, drop_behavior=True):
     if currrent_data_path is None:
         currrent_data_path = './../data/data_raw_labeled.pkl'
     # data_path = os.path.abspath(currrent_data_path)
-    raw_data = np.load(currrent_data_path)
+    raw_data = np.load(currrent_data_path, allow_pickle=True)
 
     if drop_behavior:
         behavior_variables = ['distress_TQ', 'loudness_VAS10']
@@ -39,7 +40,6 @@ def load_behavior_data(current_behavior_path=None):
         else:
             dtype = 'float'
         behavior_df = pd.read_excel(current_behavior_path, sheet_name=sheet, dtype=dtype)
-        print(behavior_df)
         dfs.append(behavior_df)
 
     final = pd.concat(dfs, sort=False, axis=1)
@@ -47,34 +47,73 @@ def load_behavior_data(current_behavior_path=None):
     return final
 
 
-class VisualizeData:
-    # Visualize data before running analyses
-    def __init__(self, seaborn_format=None, colors=None):
-        if seaborn_format:
-            sns.set(seaborn_format)  # seaborn_format must be a valid dict
+def get_group_indices(full_sides=True):
+
+    def _preprocess_side_data(side_series):
+        # Convert asymmetrical side category to LR category
+        cleaned_side_data = deepcopy(side_series)
+        for s, subj_data in enumerate(side_data):
+            if subj_data < 0:
+                cleaned_side_data.iloc[s] = -1
+            elif subj_data == 0:
+                cleaned_side_data.iloc[s] = 0
+            else:
+                cleaned_side_data.iloc[s] = 1
+
+        return cleaned_side_data
+
+    behavior_df = load_behavior_data()
+
+    type_data = behavior_df['tinnitus_type']
+    tin_types = pd.unique(type_data)
+
+    side_data = behavior_df['tinnitus_side']
+    if full_sides:
+        tin_sides = pd.unique(side_data)
+    else:
+        new_side_data = _preprocess_side_data(side_data)
+        tin_sides = pd.unique(new_side_data)
+        side_data = new_side_data
+
+    type_1, type_2, type_3 = [], [], []
+    side_1, side_2, side_3, side_4, side_5 = [], [], [], [], []
+    for subj in range(len(behavior_df.index)):
+        if type_data.iloc[subj] == tin_types[0]:
+            type_1.append(subj)
+        elif type_data.iloc[subj] == tin_types[1]:
+            type_2.append(subj)
+        elif type_data.iloc[subj] == tin_types[2]:
+            type_3.append(subj)
         else:
-            mpl.rcParams.update(mpl.rcParamsDefault)
+            print('Subject %d did not have type data' % subj)
 
-        if not colors:
-            colors = ['tab:red', 'tab:blue', 'tab:green', 'tab:yellow']
-        self.colors = colors
+        if side_data.iloc[subj] == tin_sides[0]:
+            side_1.append(subj)
+        elif side_data.iloc[subj] == tin_sides[1]:
+            side_2.append(subj)
+        elif side_data.iloc[subj] == tin_sides[2]:
+            side_3.append(subj)
+        else:
+            print('Subject %d did not have side data' % subj)
+        if full_sides:
+            if side_data.iloc[subj] == tin_sides[3]:
+                side_4.append(subj)
+            elif side_data.iloc[subj] == tin_sides[4]:
+                side_5.append(subj)
+            else:
+                print('Subject %d did not have side data' % subj)
 
-    @staticmethod
-    def _check_data(data):
-        print(data)
+    res = {'type_%d_subj_indices' % tin_types[0]: type_1,
+           'type_%d_subj_indices' % tin_types[1]: type_2,
+           'type_%d_subj_indices' % tin_types[2]: type_3,
+           'side_%d_subj_indices' % tin_sides[0]: side_1,
+           'side_%d_subj_indices' % tin_sides[1]: side_2,
+           'side_%d_subj_indices' % tin_sides[2]: side_3}
+    if full_sides:
+        res['side_%d_subj_indices' % tin_sides[3]] = side_4
+        res['side_%d_subj_indices' % tin_sides[4]] = side_5
 
-    def plot_single_scatter(self, vector, **kwargs):
-        """Plot a single variable as a scatter
-
-        Parameters:
-        -----------
-        vector : 1-D numpy array or pandas Series
-            if numpy array, will be converted to a pd.Series to generate axes labels
-
-        Returns:
-        --------
-        fig : matplotlib figure handle
-        """
+    return res
 
 
 def generate_test_df(n=100, c=10, normalize=True):
@@ -87,12 +126,31 @@ def generate_test_df(n=100, c=10, normalize=True):
     return test_df
 
 
+def clean_df_to_numpy(df):
+    # Dumb function to give networkx a numpy array
+    n_rows = len(df.index)
+    n_cols = len(list(df))
+    new_array = np.ndarray(shape=(n_rows, n_cols))
+
+    for x in range(n_rows):
+        for y in range(n_cols):
+            new_array[x, y] = df.iloc[x, y]
+
+    return new_array
+
+
 def main():
     # Sandbox stuff
     print(ctime())
-    # test_df = generate_test_df()
+
+    conn_df = load_connectivity_data()
+    print(conn_df.head())
+
     behavior = load_behavior_data()
-    # print(behavior)
+    print(behavior)
+    print(behavior.select_dtypes(include='category'))
+    get_group_indices(full_sides=False)
+
 
 if __name__ == "__main__":
     main()
