@@ -6,7 +6,7 @@ import proj_utils as pu
 import tensorflow as tf
 from tensorflow import keras
 from imblearn.over_sampling import RandomOverSampler
-from sklearn import ensemble, feature_selection, model_selection, preprocessing, pipeline, svm, metrics
+from sklearn import ensemble, feature_selection, model_selection, preprocessing, svm, metrics
 
 
 def dummy_code_categorical(data):
@@ -53,75 +53,9 @@ def load_data():
     return behavior_data, conn_data_filt
 
 
-def pipeline_test():
-    behavior_data, conn_data = load_data()
-
-    target = behavior_data['tinnitus_type']
-    # target = behavior_data['tinnitus_side'].values.astype(float) * 2
-
-    x_train, x_test, y_train, y_test = model_selection.train_test_split(conn_data, target, test_size=0.2)
-
-    preproc = preprocessing.StandardScaler().fit(x_train)
-    x_trainz = preproc.transform(x_train)
-    x_testz = preproc.transform(x_test)
-
-    # ---Pipeline objects--- #
-    variance_filter = feature_selection.VarianceThreshold(threshold=(.8 * (1 - .8)))
-    tree_classifier = ensemble.ExtraTreesClassifier(n_estimators=100)
-    feature_select = feature_selection.SelectFromModel(tree_classifier, prefit=False)  # , max_features=m)
-    svm_classifier = svm.LinearSVC()  # multi_class='crammer_singer'
-    resampler = RandomOverSampler(sampling_strategy='not majority')
-
-    steps = [
-        # ('resample data', resampler),
-        ('whiten data', preprocessing.StandardScaler()),
-        ('variance cleaning', variance_filter),
-        ('extra trees cleaning', feature_select),
-        ('classify step', svm_classifier),
-    ]
-
-    pipe = pipeline.Pipeline(steps=steps)
-    pipe.fit(x_trainz, y_train)
-
-    prediction = pipe.predict(x_testz)
-    print(prediction)
-    score = pipe.score(x_testz, y_test)
-    print(score)
-
-    # KFold cross-val
-    scores = model_selection.cross_val_score(pipe, conn_data, target, cv=3)
-    print(scores.mean())
-
-
-def feature_selection_test():
-    behavior_data, conn_data = load_data()
-    # target = behavior_data['tinnitus_type']
-    target = behavior_data['tinnitus_side'].values.astype(float) * 2
-
-    X_train, X_test, y_train, y_test = model_selection.train_test_split(
-        conn_data, target, test_size=0.2)
-
-    preproc = preprocessing.StandardScaler().fit(X_train)
-    X_train_z = preproc.transform(X_train)
-    X_test_z = preproc.transform(X_test)
-
-    sel = feature_selection.VarianceThreshold(threshold=(.8 * (1 - .8)))
-    var_cleaned = sel.fit_transform(X_train_z)
-    print(var_cleaned.shape)
-
-    clf = ensemble.ExtraTreesClassifier(n_estimators=100, criterion='entropy')
-    clf = clf.fit(var_cleaned, y_train)
-    model = feature_selection.SelectFromModel(clf, prefit=True, threshold="2*mean")
-    clf_cleaned = model.transform(var_cleaned)
-    print(clf_cleaned.shape)
-
-
 def feature_selection_pipeline(conn_data, target):
     # --- sklearn pipeline --- #
-    # Variance thresh
-    sel = feature_selection.VarianceThreshold(threshold=(.8 * (1 - .8)))
-    conn_data_vt = sel.fit_transform(conn_data)
-    x_train, x_test, y_train, y_test = model_selection.train_test_split(conn_data_vt, target, test_size=0.2, stratify=target)
+    x_train, x_test, y_train, y_test = model_selection.train_test_split(conn_data, target, test_size=0.2)
 
     # Whiten data
     preproc = preprocessing.StandardScaler().fit(x_train)
@@ -137,56 +71,6 @@ def feature_selection_pipeline(conn_data, target):
     x_test_fs = model.transform(x_test_z)
 
     return x_train_fs, x_test_fs, y_train, y_test
-
-
-def classify_with_svm():
-    behavior_data, conn_data = load_data()
-    conn_data = conn_data.values.astype(float)
-    target = np.add(behavior_data['tinnitus_type'].values.astype(int), 1)
-    # target = np.add((behavior_data['tinnitus_side'].values.astype(float) * 2), 2)
-
-    x_train_fs, x_test_fs, y_train, y_test = feature_selection_pipeline(conn_data, target)
-    svm_classifier = svm.LinearSVC()
-    svm_classifier.fit(x_train_fs, y_train)
-
-    predicted = svm_classifier.predict(x_test_fs)
-    score = svm_classifier.score(x_test_fs, y_test)
-    print('LinearSVC score:', score)
-    del x_train_fs, x_test_fs, y_train, y_test
-
-
-def classify_with_svm_resampling():
-    behavior_data, conn_data = load_data()
-    conn_data = conn_data.values.astype(float)
-    target = np.add(behavior_data['tinnitus_type'].values.astype(int), 1)
-
-    resampler = RandomOverSampler(sampling_strategy='not majority')
-
-    n_iters, n = 5, 0
-    scores, balanced_scores, balanced_chance = [], [], []
-    while n != n_iters:
-        # LeavePOut "algorithm"
-        x_res, y_res = resampler.fit_resample(conn_data, target)
-        x_train_fs, x_test_fs, y_train, y_test = feature_selection_pipeline(x_res, y_res)
-
-        svm_classifier = svm.LinearSVC(multi_class='crammer_singer')
-        svm_classifier.fit(x_train_fs, y_train)
-
-        predicted = svm_classifier.predict(x_test_fs)
-        score = svm_classifier.score(x_test_fs, y_test)
-        balanced = metrics.balanced_accuracy_score(y_test, predicted)
-        chance = metrics.balanced_accuracy_score(y_test, predicted, adjusted=True)
-        print('LinearSVC accuracy:', score)
-        print('LinearSVC balanced accuracy:', balanced)
-        print('LinearSVC balanced chance:', chance)
-        scores.append(score)
-        balanced_scores.append(balanced)
-        balanced_chance.append(chance)
-        n += 1
-
-    print('Mean accuracy:', np.mean(scores))
-    print('Mean balanced accuracy:', np.mean(balanced_scores))
-    print('Mean chance accuracy:', np.mean(balanced_chance))
 
 
 def classify_with_svm_resampling_and_kfolds(target_type='side', outdir=None):
@@ -216,10 +100,10 @@ def classify_with_svm_resampling_and_kfolds(target_type='side', outdir=None):
     for train_idx, test_idx in skf.split(x_res, y_res):
         foldname = df_idx_names[fold_count]
         fold_count += 1
+
         if outdir is not None:
-            fname = os.path.join(outdir, '%s_svm_fold%02d_classifier.pkl' % (target_type, fold_count))
+            fname = outdir + '%s_svm_fold%02d_classifier.pkl' % (target_type, fold_count)
             if os.path.exists(fname):
-                print('File exists, passing')
                 continue
 
         # Stratified k-fold splitting
@@ -261,11 +145,8 @@ def classify_with_svm_resampling_and_kfolds(target_type='side', outdir=None):
                 'f1 scores': f1_df}
 
     if outdir is not None:
-        with open(os.path.join(outdir, '%s_svm_performance.pkl' % target_type), 'wb') as file:
+        with open(outdir+'%s_svm_performance.pkl' % target_type, 'wb') as file:
             pkl.dump(res_dict, file)
-
-    print(score_df)
-    print(f1_df)
 
 
 def deep_learning():
@@ -303,9 +184,5 @@ if __name__ == "__main__":
     if not os.path.isdir(output_dir):
         os.mkdir(output_dir)
 
-    # feature_selection_test()
-    # pipeline_test()
-    # classify_with_svm()
-    # deep_learning()
-    # classify_with_svm_resampling()
     classify_with_svm_resampling_and_kfolds(outdir=output_dir)
+    # deep_learning()
