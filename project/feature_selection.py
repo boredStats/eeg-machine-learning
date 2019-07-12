@@ -189,35 +189,46 @@ def classify_with_svm_resampling():
     print('Mean chance accuracy:', np.mean(balanced_chance))
 
 
-def classify_with_svm_resampling_and_kfolds(t='type', outdir=None):
+def classify_with_svm_resampling_and_kfolds(target_type='side', outdir=None):
     behavior_data, conn_data = load_data()
     conn_data = conn_data.values.astype(float)
 
-    if t is 'type':
-        target = np.add(behavior_data['tinnitus_type'].values.astype(int), 1)
-    elif t is 'side':
+    if target_type is 'side':
         target = behavior_data['tinnitus_side'].values.astype(float) * 2
-    else:
-        raise ValueError('t must either be type or side')
+    elif target_type is 'type':
+        target = np.add(behavior_data['tinnitus_type'].values.astype(int), 1)
 
+    # Create score dataframes, k-fold splitter
+    n_splits = 10
+    skf = model_selection.StratifiedKFold(n_splits=n_splits)
+
+    df_idx_names = ['Fold %02d' % (n+1) for n in range(n_splits)]
+    score_df = pd.DataFrame(index=df_idx_names, columns=['Balanced accuracy', 'Chance accuracy'])
+    f1_colnames = ['%s %d' % (target_type, label) for label in np.unique(target)]
+    f1_df = pd.DataFrame(index=df_idx_names, columns=f1_colnames)
+
+    # Oversample connectivity data, apply k-fold splitter
     resampler = RandomOverSampler(sampling_strategy='not majority')
     x_res, y_res = resampler.fit_resample(conn_data, target)
-
-    skf = model_selection.LeaveOneOut()
     skf.get_n_splits(x_res, y_res)
-    scores, balanced_scores, balanced_chance, f1s = [], [], [], []
-    fold_count = 1
-    for train_idx, test_idx in skf.split(x_res, y_res):
-        fname = os.path.join(outdir, '%s_LOO_fold%04d.pkl' % (t, fold_count))
-        if os.path.exists(fname):
-            print('File exists, passing')
-            continue
 
+    fold_count = 0
+    for train_idx, test_idx in skf.split(x_res, y_res):
+        foldname = df_idx_names[fold_count]
+        fold_count += 1
+        if outdir is not None:
+            fname = os.path.join(outdir, '%s_svm_fold%02d_classifier.pkl' % (target_type, fold_count))
+            if os.path.exists(fname):
+                print('File exists, passing')
+                continue
+
+        # Stratified k-fold splitting
         x_train, x_test = x_res[train_idx], x_res[test_idx]
         y_train, y_test = y_res[train_idx], y_res[test_idx]
 
+        # Standardization
         preproc = preprocessing.StandardScaler().fit(x_train)
-        x_train_z = preproc.fit_transform(x_train)
+        x_train_z = preproc.transform(x_train)
         x_test_z = preproc.transform(x_test)
 
         # Feature selection with extra trees
@@ -228,37 +239,33 @@ def classify_with_svm_resampling_and_kfolds(t='type', outdir=None):
         x_train_fs = model.fit_transform(x_train_z, y_train)
         x_test_fs = model.transform(x_test_z)
 
+        # SVM classification
         svm_classifier = svm.LinearSVC(fit_intercept=False)
         svm_classifier.fit(x_train_fs, y_train)
 
+        # Scoring
         predicted = svm_classifier.predict(x_test_fs)
-        score = svm_classifier.score(x_test_fs, y_test)
         balanced = metrics.balanced_accuracy_score(y_test, predicted)
         chance = metrics.balanced_accuracy_score(y_test, predicted, adjusted=True)
         f1 = metrics.f1_score(y_test, predicted, average=None)
 
+        score_df.loc[foldname]['Balanced accuracy'] = balanced
+        score_df.loc[foldname]['Chance accuracy'] = chance
+        f1_df.loc[foldname][:] = f1
+
         if outdir is not None:
-            res_dict = {
-                'accuracy scores': score,
-                'balanced accuracy scores': balanced,
-                'chance accuracy scores': chance,
-                'f1 scores': f1,
-                'svm classifier object': svm_classifier
-            }
             with open(fname, 'wb') as file:
-                pkl.dump(res_dict, file)
-        else:
-            scores.append(score)
-            balanced_scores.append(balanced)
-            balanced_chance.append(chance)
-            f1s.append(f1)
+                pkl.dump(svm_classifier, file)
 
-        fold_count += 1
+    res_dict = {'accuracy scores': score_df,
+                'f1 scores': f1_df}
 
-    print('Mean accuracy:', np.mean(scores))
-    print('Mean balanced accuracy:', np.mean(balanced_scores))
-    print('Mean chance accuracy:', np.mean(balanced_chance))
-    print('Mean F1 score:', np.mean(f1s))
+    if outdir is not None:
+        with open(os.path.join(outdir, '%s_svm_performance.pkl' % target_type), 'wb') as file:
+            pkl.dump(res_dict, file)
+
+    print(score_df)
+    print(f1_df)
 
 
 def deep_learning():
