@@ -25,9 +25,29 @@ def load_data():
     return behavior_df, filt_df
 
 
+def feature_selection_pipeline(conn_data, target):
+    # --- sklearn pipeline --- #
+    x_train, x_test, y_train, y_test = model_selection.train_test_split(conn_data, target, test_size=0.2)
+
+    # Whiten data
+    preproc = preprocessing.StandardScaler().fit(x_train)
+    x_train_z = preproc.fit_transform(x_train)
+    x_test_z = preproc.transform(x_test)
+
+    # Feature selection with extra trees
+    clf = ensemble.ExtraTreesClassifier(n_estimators=100)
+    model = feature_selection.SelectFromModel(clf, threshold="2*mean")
+
+    # Transform train and test data with feature selection model
+    x_train_fs = model.fit_transform(x_train_z, y_train)
+    x_test_fs = model.transform(x_test_z)
+
+    return x_train_fs, x_test_fs, y_train, y_test
+
+
 def eeg_classify(eeg_data, target_data, target_type, outdir=None):
     feature_names = list(eeg_data)
-
+    target_classes = ['%s %s' % (target_type, t) for t in np.unique(target_data)]
     # Create score dataframes, k-fold splitter
     n_splits = 10
     skf = model_selection.StratifiedKFold(n_splits=n_splits)
@@ -43,7 +63,7 @@ def eeg_classify(eeg_data, target_data, target_type, outdir=None):
     skf.get_n_splits(x_res, y_res)
 
     fold_count = 0
-    svm_clf_dict = {}
+    svm_classifiers, svm_coefficents = {}, {}
     for train_idx, test_idx in skf.split(x_res, y_res):
         foldname = rownames[fold_count]
         fold_count += 1
@@ -58,7 +78,7 @@ def eeg_classify(eeg_data, target_data, target_type, outdir=None):
         x_test_z = preproc.transform(x_test)
 
         # Feature selection with extra trees
-        clf = ensemble.ExtraTreesClassifier(n_estimators=100)
+        clf = ensemble.ExtraTreesClassifier()
         model = feature_selection.SelectFromModel(clf, threshold="2*mean")
 
         # Transform train and test data with feature selection model
@@ -77,21 +97,24 @@ def eeg_classify(eeg_data, target_data, target_type, outdir=None):
         chance = metrics.balanced_accuracy_score(y_test, predicted, adjusted=True)
         f1 = metrics.f1_score(y_test, predicted, average=None)
 
+        # Saving results
         score_df.loc[foldname]['Balanced accuracy'] = balanced
         score_df.loc[foldname]['Chance accuracy'] = chance
         f1_df.loc[foldname][:] = f1
+        coef_df = pd.DataFrame(svm_classifier.coef_, index=target_classes, columns=cleaned_features)
 
-        # Saving pipeline results
-        svm_clf_dict['svm_%s' % foldname] = (cleaned_features, svm_classifier)
+        svm_classifiers[foldname] = svm_classifier
+        svm_coefficents[foldname] = coef_df
 
     scores_dict = {'accuracy scores': score_df,
                    'f1 scores': f1_df}
 
     if outdir is not None:
         save_xls(scores_dict, outdir+'%s_svm_performance.xlsx' % target_type)
+        save_xls(svm_coefficents, outdir+'%s_svm_coefficients.xlsx' % target_type)
 
         with open(outdir+'%s_svm_classifiers.pkl' % target_type, 'wb') as file:
-            pkl.dump(svm_clf_dict, file)
+            pkl.dump(svm_classifiers, file)
 
 
 def deep_learning():
@@ -125,7 +148,7 @@ def deep_learning():
 
 
 if __name__ == "__main__":
-    output_dir = './../data/feature_selection/'
+    output_dir = './../data/eeg_classification/'
     if not os.path.isdir(output_dir):
         os.mkdir(output_dir)
 
@@ -137,4 +160,3 @@ if __name__ == "__main__":
 
     target = np.add(behavior_data['tinnitus_type'].values.astype(int), 1)
     eeg_classify(eeg_data=conn_data, target_data=target, target_type='tinnitus_type', outdir=output_dir)
-
