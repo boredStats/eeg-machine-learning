@@ -91,14 +91,14 @@ if __name__ == "__main__":
     target = behavior_data['loudness_VAS'].values.astype(float)
     eeg_regression(eeg_data=conn_data, target_data=target, target_type='loudness_VAS', outdir=output_dir)
 
-    target = behavior_data['distress_TQ']
+    target = behavior_data['distress_TQ'].values.astype(float)
     eeg_regression(eeg_data=conn_data, target_data=target, target_type='distress_TQ', outdir=output_dir)
 
-    target = behavior_data['distress_VAS']
+    target = behavior_data['distress_VAS'].values.astype(float)
     eeg_regression(eeg_data=conn_data, target_data=target, target_type='distress_VAS', outdir=output_dir)
 
-    target = behavior_data['anxiety_score']
+    target = behavior_data['anxiety_score'].values.astype(float)
     eeg_regression(eeg_data=conn_data, target_data=target, target_type='anxiety_score', outdir=output_dir)
 
-    target = behavior_data['depression_score']
+    target = behavior_data['depression_score'].values.astype(float)
     eeg_regression(eeg_data=conn_data, target_data=target, target_type='depression_score', outdir=output_dir)
