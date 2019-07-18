@@ -38,6 +38,7 @@ def eeg_regression(eeg_data, target_data, target_type, outdir=None):
 
     fold_count = 0
     classifier_dict, coef_dict = {}, {}
+    coef_df = pd.DataFrame()
     for train_idx, test_idx in skf.split(x_res):
         foldname = rownames[fold_count]
         fold_count += 1
@@ -72,10 +73,15 @@ def eeg_regression(eeg_data, target_data, target_type, outdir=None):
 
         # Saving pipeline results
         classifier_dict['svm_%s' % foldname] = svm_classifier
-        coef_dict['svm_%s' % foldname] =  pd.DataFrame(svm_classifier.coef_, index=['coef'], columns=cleaned_features)
+        fold_df = pd.DataFrame()
+        fold_df['%s features' % foldname] = cleaned_features
+        fold_df['%s coef' % foldname] = np.ndarray.flatten(svm_classifier.coef_)
+        pd.concat([coef_df, fold_df], ignore_index=True, axis=1)
+        coef_dict['svm_%s' % foldname] = pd.DataFrame(svm_classifier.coef_, index=['coef'], columns=cleaned_features)
 
     if outdir is not None:
-        save_xls(coef_dict, outdir+'%s_svm_performance.xlsx' % target_type)
+        save_xls(coef_dict, outdir+'%s_feature_coefficients.xlsx' % target_type)
+        coef_df.to_excel('%s_feature_coefficients.xlsx' % target_type)
         with open(outdir+'%s_svm_classifiers.pkl' % target_type, 'wb') as file:
             pkl.dump(classifier_dict, file)
 
