@@ -3,16 +3,7 @@ import numpy as np
 import pandas as pd
 import pickle as pkl
 import proj_utils as pu
-from imblearn.over_sampling import RandomOverSampler
 from sklearn import ensemble, feature_selection, model_selection, preprocessing, svm, metrics
-
-
-def save_xls(dict_df, path):
-    # Save a dictionary of dataframes to an excel file, with each dataframe as a seperate page
-    writer = pd.ExcelWriter(path)
-    for key in list(dict_df):
-        dict_df[key].to_excel(writer, '%s' % key)
-    writer.save()
 
 
 def load_data():
@@ -26,26 +17,26 @@ def load_data():
 def eeg_regression(eeg_data, target_data, target_type, outdir=None):
     feature_names = list(eeg_data)
 
-    # Create output objects, k-fold splitter
+    # Create output objects
     n_splits = 10
-    skf = model_selection.KFold(n_splits=n_splits)
+    foldnames = ['Fold %02d' % (n+1) for n in range(n_splits)]
+    score_df = pd.DataFrame(index=foldnames, columns=['ExplainedVar', 'MaxErr', 'MAE', 'MSE', 'r2'])
+    coef_df = pd.DataFrame()
+    classifier_dict = {}
 
-    rownames = ['Fold %02d' % (n+1) for n in range(n_splits)]
-    score_df = pd.DataFrame(index=rownames, columns=['Explained variance score', 'Mean squared error'])
-
-    x_res, y_res = eeg_data.values, target_data
-    skf.get_n_splits(x_res, y_res)
+    # Split data
+    random_state = 13  # for reproducibility
+    skf = model_selection.KFold(n_splits=n_splits, random_state=random_state)
+    skf.get_n_splits(eeg_data.values, target_data)
 
     fold_count = 0
-    classifier_dict, coef_dict = {}, {}
-    coef_df = pd.DataFrame()
-    for train_idx, test_idx in skf.split(x_res):
-        foldname = rownames[fold_count]
+    for train_idx, test_idx in skf.split(eeg_data.values):
+        foldname = foldnames[fold_count]
         fold_count += 1
 
         # K-fold splitting
-        x_train, x_test = x_res[train_idx], x_res[test_idx]
-        y_train, y_test = y_res[train_idx], y_res[test_idx]
+        x_train, x_test = eeg_data.values[train_idx], eeg_data.values[test_idx]
+        y_train, y_test = target_data[train_idx], target_data[test_idx]
 
         # Standardization
         preproc = preprocessing.StandardScaler().fit(x_train)
@@ -68,25 +59,32 @@ def eeg_regression(eeg_data, target_data, target_type, outdir=None):
 
         # Scoring
         predicted = svm_classifier.predict(x_test_fs)
-        score_df.loc[foldname]['Explained variance score'] = metrics.explained_variance_score(y_test, predicted)
-        score_df.loc[foldname]['Mean squared error'] = metrics.mean_squared_error(y_test, predicted)
+        score_df.loc[foldname]['ExplainedVar'] = metrics.explained_variance_score(y_test, predicted)
+        score_df.loc[foldname]['MaxErr'] = metrics.max_error(y_test, predicted)
+        score_df.loc[foldname]['MAE'] = metrics.mean_absolute_error(y_test, predicted)
+        score_df.loc[foldname]['MSE'] = metrics.mean_squared_error(y_test, predicted)
+        score_df.loc[foldname]['r2'] = metrics.r2_score(y_test, predicted)
 
         # Saving pipeline results
         classifier_dict['svm_%s' % foldname] = svm_classifier
         fold_df = pd.DataFrame()
         fold_df['%s features' % foldname] = cleaned_features
         fold_df['%s coef' % foldname] = np.ndarray.flatten(svm_classifier.coef_)
+        fold_df['_'] = ['' for cf in cleaned_features]
         pd.concat([coef_df, fold_df], ignore_index=True, axis=1)
-        coef_dict['svm_%s' % foldname] = pd.DataFrame(svm_classifier.coef_, index=['coef'], columns=cleaned_features)
 
     if outdir is not None:
-        save_xls(coef_dict, outdir+'%s_feature_coefficients.xlsx' % target_type)
+        score_df.to_excel('%s_performance_measures.xlsx' % target_type)
         coef_df.to_excel('%s_feature_coefficients.xlsx' % target_type)
-        with open(outdir+'%s_svm_classifiers.pkl' % target_type, 'wb') as file:
+
+        with open(outdir+'%s_linear_classifiers.pkl' % target_type, 'wb') as file:
             pkl.dump(classifier_dict, file)
 
 
 if __name__ == "__main__":
+    import logging
+    logging.basicConfig(level=logging.INFO)
+
     output_dir = './../data/eeg_regression/'
     if not os.path.isdir(output_dir):
         os.mkdir(output_dir)
@@ -94,17 +92,8 @@ if __name__ == "__main__":
     behavior_data, conn_data = load_data()
     conn_data.astype(float)
 
-    target = behavior_data['loudness_VAS'].values.astype(float)
-    eeg_regression(eeg_data=conn_data, target_data=target, target_type='loudness_VAS', outdir=output_dir)
-
-    target = behavior_data['distress_TQ'].values.astype(float)
-    eeg_regression(eeg_data=conn_data, target_data=target, target_type='distress_TQ', outdir=output_dir)
-
-    target = behavior_data['distress_VAS'].values.astype(float)
-    eeg_regression(eeg_data=conn_data, target_data=target, target_type='distress_VAS', outdir=output_dir)
-
-    target = behavior_data['anxiety_score'].values.astype(float)
-    eeg_regression(eeg_data=conn_data, target_data=target, target_type='anxiety_score', outdir=output_dir)
-
-    target = behavior_data['depression_score'].values.astype(float)
-    eeg_regression(eeg_data=conn_data, target_data=target, target_type='depression_score', outdir=output_dir)
+    targets = ['loudness_VAS', 'distress_TQ', 'distress_VAS', 'anxiety_score', 'depression_score']
+    for target in targets:
+        target_vect = behavior_data[target].values.astype(float)
+        logging.INFO('%s Running regression on %s' % (pu.ctime(), target))
+        eeg_regression(eeg_data=conn_data, target_data=target_vect, target_type=target, outdir=output_dir)
