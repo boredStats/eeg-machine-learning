@@ -94,7 +94,6 @@ if __name__ == "__main__":
 
     targets = ['loudness_VAS', 'distress_TQ', 'distress_VAS', 'anxiety_score', 'depression_score']
     for target in targets:
-        print(target)
         target_vect = behavior_data[target].values.astype(float)
         logging.info('%s Running regression on %s' % (pu.ctime(), target))
         eeg_regression(eeg_data=conn_data, target_data=target_vect, target_type=target, outdir=output_dir)
