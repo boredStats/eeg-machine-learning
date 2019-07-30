@@ -1,4 +1,5 @@
-import os
+from os.path import isdir, join
+from os import mkdir
 import numpy as np
 import pandas as pd
 import pickle as pkl
@@ -47,15 +48,15 @@ def feature_selection_pipeline(conn_data, target):
 
 def eeg_classify(eeg_data, target_data, target_type, outdir=None):
     feature_names = list(eeg_data)
-    target_classes = ['%s %s' % (target_type, t) for t in np.unique(target_data)]
+    target_classes = ['%s %d' % (target_type, t) for t in np.unique(target_data)]
     # Create score dataframes, k-fold splitter
     n_splits = 10
     skf = model_selection.StratifiedKFold(n_splits=n_splits)
 
     rownames = ['Fold %02d' % (n+1) for n in range(n_splits)]
     score_df = pd.DataFrame(index=rownames, columns=['Balanced accuracy', 'Chance accuracy'])
-    f1_colnames = ['%s %d' % (target_type, label) for label in np.unique(target_data)]  # names of the target classes
-    f1_df = pd.DataFrame(index=rownames, columns=f1_colnames)
+    # f1_colnames = ['%s %d' % (target_type, label) for label in np.unique(target_data)]  # names of the target classes
+    f1_df = pd.DataFrame(index=rownames, columns=target_classes)
 
     # Oversample connectivity data, apply k-fold splitter
     resampler = RandomOverSampler(sampling_strategy='not majority')
@@ -110,10 +111,14 @@ def eeg_classify(eeg_data, target_data, target_type, outdir=None):
                    'f1 scores': f1_df}
 
     if outdir is not None:
-        save_xls(scores_dict, outdir+'%s_svm_performance.xlsx' % target_type)
-        save_xls(svm_coefficents, outdir+'%s_svm_coefficients.xlsx' % target_type)
+        target_outdir = join(outdir, target_type)
+        if not isdir(target_outdir):
+            mkdir(target_outdir)
 
-        with open(outdir+'%s_svm_classifiers.pkl' % target_type, 'wb') as file:
+        save_xls(scores_dict, join(target_outdir, 'svm_performance.xlsx'))
+        save_xls(svm_coefficents, join(target_outdir, 'svm_coefficients.xlsx'))
+
+        with open(join(target_outdir, 'svm_classifiers.pkl'), 'wb') as file:
             pkl.dump(svm_classifiers, file)
 
 
@@ -147,16 +152,75 @@ def deep_learning():
     print('Test accuracy:', test_acc)
 
 
+def bin_continuous_targets(target_vector, thresholds):
+    if isinstance(target_vector, pd.Series):
+        target_vector = target_vector.values
+
+    binned_vector = []
+    for value in target_vector:
+        for bin_class, thresh in enumerate(thresholds):
+            if value > thresh:
+                pass
+            elif value <= thresh:
+                binned_vector.append(bin_class)
+                break
+
+    return np.ndarray.flatten(np.asarray(binned_vector))
+
+
+def dummy_code_binary(categorical_series):
+    # Sex: 1M, -1F
+
+    string_categorical_series = pd.DataFrame(index=categorical_series.index, columns=list(categorical_series))
+
+    for colname in list(categorical_series):
+        print(colname)
+        string_series = []
+        for value in categorical_series[colname].values:
+            if value == 1:
+                if 'sex' in colname:
+                    string_series.append('male')
+                else:
+                    string_series.append('yes')
+            elif value == -1:
+                if 'sex' in colname:
+                    string_series.append('female')
+                else:
+                    string_series.append('no')
+        string_categorical_series[colname] = string_series
+
+    dummy_series = pd.get_dummies(string_categorical_series)
+    old_names = list(dummy_series)
+    return dummy_series.rename(columns=dict(zip(old_names, ['categorical_%s' % d for d in old_names])))
+
+
 if __name__ == "__main__":
+    import logging
+    logging.basicConfig(level=logging.INFO)
+
+    categorical_variables = ['smoking', 'deanxit_antidepressants', 'rivotril_antianxiety', 'sex']
+
     output_dir = './../data/eeg_classification/'
-    if not os.path.isdir(output_dir):
-        os.mkdir(output_dir)
+    if not isdir(output_dir):
+        mkdir(output_dir)
 
     behavior_data, conn_data = load_data()
     conn_data.astype(float)
 
-    target = behavior_data['tinnitus_side'].values.astype(float) * 2
-    eeg_classify(eeg_data=conn_data, target_data=target, target_type='tinnitus_side', outdir=output_dir)
+    categorical_data = behavior_data[categorical_variables]
+    dummy_coded_categorical = dummy_code_binary(categorical_data)
+    print(dummy_coded_categorical.head())
 
-    target = np.add(behavior_data['tinnitus_type'].values.astype(int), 1)
-    eeg_classify(eeg_data=conn_data, target_data=target, target_type='tinnitus_type', outdir=output_dir)
+    # target = behavior_data['tinnitus_side'].values.astype(float) * 2
+    # eeg_classify(eeg_data=conn_data, target_data=target, target_type='tinnitus_side', outdir=output_dir)
+
+    # target = np.add(behavior_data['tinnitus_type'].values.astype(int), 1)
+    # eeg_classify(eeg_data=conn_data, target_data=target, target_type='tinnitus_type', outdir=output_dir)
+
+    # logging.info('%s: Running classification on TQ' % pu.ctime())
+    # target = behavior_data['distress_TQ'].values
+    # binned_target = bin_continuous_targets(target, thresholds=[47, np.max(target)])
+    # print(np.unique(binned_target))
+    # eeg_classify(eeg_data=conn_data, target_data=binned_target, target_type='distress_TQ', outdir=output_dir)
+
+    logging.info('%s: Finished' % pu.ctime())
