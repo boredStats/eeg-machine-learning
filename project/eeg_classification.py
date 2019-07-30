@@ -27,13 +27,13 @@ def load_data():
 def eeg_classify(eeg_data, target_data, target_type, outdir=None):
     feature_names = list(eeg_data)
     target_classes = ['%s %d' % (target_type, t) for t in np.unique(target_data)]
+
     # Create score dataframes, k-fold splitter
     n_splits = 2
     skf = model_selection.StratifiedKFold(n_splits=n_splits)
 
     rownames = ['Fold %02d' % (n+1) for n in range(n_splits)]
     score_df = pd.DataFrame(index=rownames, columns=['Balanced accuracy', 'Chance accuracy'])
-    # f1_colnames = ['%s %d' % (target_type, label) for label in np.unique(target_data)]  # names of the target classes
     f1_df = pd.DataFrame(index=rownames, columns=target_classes)
 
     # Oversample connectivity data, apply k-fold splitter
@@ -118,7 +118,6 @@ def bin_continuous_targets(target_vector, thresholds):
 
 def dummy_code_binary(categorical_series):
     # Sex: 1M, -1F
-
     string_categorical_series = pd.DataFrame(index=categorical_series.index, columns=list(categorical_series))
 
     for colname in list(categorical_series):
@@ -145,20 +144,23 @@ if __name__ == "__main__":
     import logging
     logging.basicConfig(level=logging.INFO)
 
-    categorical_variables = ['smoking', 'deanxit_antidepressants', 'rivotril_antianxiety', 'sex']
-
     output_dir = './../data/eeg_classification/'
     if not isdir(output_dir):
         mkdir(output_dir)
 
+    logging.info('%s: Loading data' % pu.ctime())
     behavior_data, conn_data = load_data()
     conn_data.astype(float)
 
+    categorical_variables = ['smoking', 'deanxit_antidepressants', 'rivotril_antianxiety', 'sex']
     categorical_data = behavior_data[categorical_variables]
     dummy_coded_categorical = dummy_code_binary(categorical_data)
+    covariate_data = pd.concat([behavior_data['age'], dummy_coded_categorical], axis=1)
+
+    ml_data = pd.concat([conn_data, covariate_data], axis=1)
 
     target = behavior_data['tinnitus_side'].values.astype(float) * 2
-    eeg_classify(eeg_data=conn_data, target_data=target, target_type='tinnitus_side', outdir=output_dir)
+    eeg_classify(eeg_data=ml_data, target_data=target, target_type='tinnitus_side', outdir=output_dir)
 
     # target = np.add(behavior_data['tinnitus_type'].values.astype(int), 1)
     # eeg_classify(eeg_data=conn_data, target_data=target, target_type='tinnitus_type', outdir=output_dir)
