@@ -4,8 +4,6 @@ import numpy as np
 import pandas as pd
 import pickle as pkl
 import proj_utils as pu
-import tensorflow as tf
-from tensorflow import keras
 from imblearn.over_sampling import RandomOverSampler
 from sklearn import ensemble, feature_selection, model_selection, preprocessing, svm, metrics
 
@@ -26,31 +24,11 @@ def load_data():
     return behavior_df, filt_df
 
 
-def feature_selection_pipeline(conn_data, target):
-    # --- sklearn pipeline --- #
-    x_train, x_test, y_train, y_test = model_selection.train_test_split(conn_data, target, test_size=0.2)
-
-    # Whiten data
-    preproc = preprocessing.StandardScaler().fit(x_train)
-    x_train_z = preproc.fit_transform(x_train)
-    x_test_z = preproc.transform(x_test)
-
-    # Feature selection with extra trees
-    clf = ensemble.ExtraTreesClassifier(n_estimators=100)
-    model = feature_selection.SelectFromModel(clf, threshold="2*mean")
-
-    # Transform train and test data with feature selection model
-    x_train_fs = model.fit_transform(x_train_z, y_train)
-    x_test_fs = model.transform(x_test_z)
-
-    return x_train_fs, x_test_fs, y_train, y_test
-
-
 def eeg_classify(eeg_data, target_data, target_type, outdir=None):
     feature_names = list(eeg_data)
     target_classes = ['%s %d' % (target_type, t) for t in np.unique(target_data)]
     # Create score dataframes, k-fold splitter
-    n_splits = 10
+    n_splits = 2
     skf = model_selection.StratifiedKFold(n_splits=n_splits)
 
     rownames = ['Fold %02d' % (n+1) for n in range(n_splits)]
@@ -122,36 +100,6 @@ def eeg_classify(eeg_data, target_data, target_type, outdir=None):
             pkl.dump(svm_classifiers, file)
 
 
-def deep_learning():
-    behavior_data, conn_data = load_data()
-    conn_data = conn_data.values.astype(float)
-    target = np.add(behavior_data['tinnitus_type'].values.astype(int), 1)
-    # target = np.add((behavior_data['tinnitus_side'].values.astype(float) * 2), 2)
-
-    resampler = RandomOverSampler(sampling_strategy='not majority')
-    x_res, y_res = resampler.fit_resample(conn_data, target)
-    x_train_fs, x_test_fs, y_train, y_test = feature_selection_pipeline(x_res, y_res)
-
-    # --- Deep learning --- #
-    n_labels = len(pd.unique(target))
-    print('N classes:', n_labels)
-    model = keras.Sequential([
-        keras.layers.Dense(128, activation=tf.nn.relu),
-        keras.layers.Dense(n_labels, activation=tf.nn.softmax)
-    ])
-
-    model.compile(
-        optimizer='adam',
-        loss='sparse_categorical_crossentropy',
-        metrics=['accuracy']
-    )
-
-    model.fit(x_train_fs, y_train, epochs=5)
-
-    test_loss, test_acc = model.evaluate(x_test_fs, y_test)
-    print('Test accuracy:', test_acc)
-
-
 def bin_continuous_targets(target_vector, thresholds):
     if isinstance(target_vector, pd.Series):
         target_vector = target_vector.values
@@ -174,7 +122,6 @@ def dummy_code_binary(categorical_series):
     string_categorical_series = pd.DataFrame(index=categorical_series.index, columns=list(categorical_series))
 
     for colname in list(categorical_series):
-        print(colname)
         string_series = []
         for value in categorical_series[colname].values:
             if value == 1:
@@ -209,10 +156,9 @@ if __name__ == "__main__":
 
     categorical_data = behavior_data[categorical_variables]
     dummy_coded_categorical = dummy_code_binary(categorical_data)
-    print(dummy_coded_categorical.head())
 
-    # target = behavior_data['tinnitus_side'].values.astype(float) * 2
-    # eeg_classify(eeg_data=conn_data, target_data=target, target_type='tinnitus_side', outdir=output_dir)
+    target = behavior_data['tinnitus_side'].values.astype(float) * 2
+    eeg_classify(eeg_data=conn_data, target_data=target, target_type='tinnitus_side', outdir=output_dir)
 
     # target = np.add(behavior_data['tinnitus_type'].values.astype(int), 1)
     # eeg_classify(eeg_data=conn_data, target_data=target, target_type='tinnitus_type', outdir=output_dir)
