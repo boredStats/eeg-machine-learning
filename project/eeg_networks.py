@@ -5,7 +5,9 @@ import numpy as np
 import pandas as pd
 import pickle as pkl
 import proj_utils
-
+import matplotlib as mpl
+import seaborn as sns
+import matplotlib.pyplot as plt
 
 logging.basicConfig(filename='./logs/eeg_networks.log', filemode='w', level=logging.INFO)
 
@@ -166,7 +168,7 @@ def clean_df_to_numpy(df):
 
 
 def run_graph_theory(band, filelist, subjects, columns, outpath):
-    thresholds = [0, .2, .4, .6, .8, .9]
+    thresholds = [0, .1, .2, .3, .4, .5, .6, .7, .8, .9]
     for thresh in thresholds:
         logging.info('%s: Running %s at %.2f' % (proj_utils.ctime(), band, thresh))
         s = 0
@@ -178,7 +180,7 @@ def run_graph_theory(band, filelist, subjects, columns, outpath):
 
                 conn_res = calc_graph_measures(clean_df_to_numpy(data_df), thresh)
                 for r, res_key in enumerate(conn_res):
-                    graph_df[s, r] = conn_res[res_key]
+                    graph_df.iloc[s, r] = conn_res[res_key]
                 s += 1
 
         outfile = os.path.join(outpath, 'graph_results_%s_%.2f_thresh.pkl' % (band, thresh))
@@ -196,12 +198,12 @@ def main():
     if not os.path.isdir(dpath):
         os.mkdir(dpath)
 
-    print('%s: Creating adjacency dicts' % proj_utils.ctime())
-    adj_dict = create_adjacency_dict(data_df, bands)
+    # print('%s: Creating adjacency dicts' % proj_utils.ctime())
+    # adj_dict = create_adjacency_dict(data_df, bands)
 
-    print('%s: Creating subject adjacency matrices' % proj_utils.ctime())
-    rois = parse_roi_names(list(data_df))
-    create_subj_adjacency_mats(adj_dict, bands, rois, dpath)
+    # print('%s: Creating subject adjacency matrices' % proj_utils.ctime())
+    # rois = parse_roi_names(list(data_df))
+    # create_subj_adjacency_mats(adj_dict, bands, rois, dpath)
 
     test_res = test_graph_functions()
 
@@ -219,6 +221,25 @@ def main():
     logging.info('%s: Finished' % proj_utils.ctime())
 
 
+def plot_box_whisker(data_df, sns_format=False):
+    if sns_format:
+        sns.set()
+    else:
+        mpl.rcParams.update(mpl.rcParamsDefault)
+
+    for colname in data_df.columns:
+        ax = data_df.boxplot(column=colname, return_type='axes')
+        plt.show()
+
+
 if __name__ == "__main__":
     logging.info(networkx.__version__)  # checking venv version
     main()
+    # outpath = './../data/graph_theory_res/'
+    # for file in os.listdir(outpath):
+    #     with open(os.path.join(outpath, file), 'rb') as df_file:
+    #         df = pkl.load(df_file)
+    #     print(df.head())
+    #     print(df.index)
+    #     # plot_box_whisker(df)
+    #     break
