@@ -139,6 +139,38 @@ def clean_df_to_numpy(df):
     return new_array
 
 
+def load_data_full_subjects():
+    # Remove EEG subjects that don't have behavior data
+    behavior_df = load_behavior_data()
+    conn_df = load_connectivity_data()
+    filt_df = conn_df.filter(items=behavior_df.index, axis=0)  # Remove EEG subjects with missing rowvals in behavior_df
+    return behavior_df, filt_df
+
+
+def dummy_code_binary(categorical_series):
+    # Sex: 1M, -1F
+    string_categorical_series = pd.DataFrame(index=categorical_series.index, columns=list(categorical_series))
+
+    for colname in list(categorical_series):
+        string_series = []
+        for value in categorical_series[colname].values:
+            if value == 1:
+                if 'sex' in colname:
+                    string_series.append('male')
+                else:
+                    string_series.append('yes')
+            elif value == -1:
+                if 'sex' in colname:
+                    string_series.append('female')
+                else:
+                    string_series.append('no')
+        string_categorical_series[colname] = string_series
+
+    dummy_series = pd.get_dummies(string_categorical_series)
+    old_names = list(dummy_series)
+    return dummy_series.rename(columns=dict(zip(old_names, ['categorical_%s' % d for d in old_names])))
+
+
 def main():
     # Sandbox stuff
     print(ctime())
