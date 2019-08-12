@@ -11,6 +11,9 @@ from sklearn.utils.testing import ignore_warnings
 from sklearn.exceptions import ConvergenceWarning
 
 
+seed = 13
+
+
 def save_xls(dict_df, path):
     # Save a dictionary of dataframes to an excel file, with each dataframe as a seperate page
     writer = pd.ExcelWriter(path)
@@ -27,7 +30,7 @@ def calc_scores(y_test, predicted):
 
 
 def svmc(x_train, y_train, x_test, cleaned_features):
-    clf = svm.LinearSVC(fit_intercept=False)
+    clf = svm.LinearSVC(fit_intercept=False, random_state=seed)
     clf.fit(x_train, y_train)
     target_classes = clf.classes_
     target_classes = [str(c) for c in target_classes]
@@ -35,7 +38,7 @@ def svmc(x_train, y_train, x_test, cleaned_features):
     predicted = clf.predict(x_test)
 
     if len(target_classes) == 2:
-        idx_label = ['support_vector_coefficients']
+        idx_label = ['coefficients']
     else:
         idx_label = target_classes
     coef_df = pd.DataFrame(clf.coef_, index=idx_label, columns=cleaned_features)
@@ -43,22 +46,23 @@ def svmc(x_train, y_train, x_test, cleaned_features):
 
 
 def extra_trees(x_train, y_train, x_test, cleaned_features):
-    clf = ensemble.ExtraTreesClassifier(random_state=13)
+    clf = ensemble.ExtraTreesClassifier(random_state=seed)
     clf.fit(x_train, y_train)
     predicted = clf.predict(x_test)
-    feature_df = pd.DataFrame(clf.feature_importances_, columns=['feature_importances'], index=cleaned_features)
+    feature_df = pd.DataFrame(columns=cleaned_features)
+    feature_df.loc['feature_importances'] = clf.feature_importances_
     return predicted, feature_df, clf
 
 
 def sgd(x_train, y_train, x_test, cleaned_features):
-    clf = linear_model.SGDClassifier(loss="hinge", penalty="l2", max_iter=1000)
+    clf = linear_model.SGDClassifier(loss="hinge", penalty="l2", max_iter=1000, random_state=seed)
     clf.fit(x_train, y_train)
     target_classes = clf.classes_
     target_classes = [str(c) for c in target_classes]
 
     predicted = clf.predict(x_test)
     if len(target_classes) == 2:
-        idx_label = ['support_vector_coefficients']
+        idx_label = ['coefficients']
     else:
         idx_label = target_classes
     coef_df = pd.DataFrame(clf.coef_, index=idx_label, columns=cleaned_features)
@@ -136,10 +140,10 @@ def eeg_classify(eeg_data, target_data, target_type, model, outdir):
 
     # Create score dataframes, k-fold splitter
     n_splits = 10
-    skf = model_selection.StratifiedKFold(n_splits=n_splits, random_state=13)
+    skf = model_selection.StratifiedKFold(n_splits=n_splits, random_state=seed)
 
     # Oversample connectivity data, apply k-fold splitter
-    resampler = RandomOverSampler(sampling_strategy='not majority', random_state=13)
+    resampler = RandomOverSampler(sampling_strategy='not majority', random_state=seed)
     x_res, y_res = resampler.fit_resample(eeg_data, target_data)
     skf.get_n_splits(x_res, y_res)
 
@@ -173,7 +177,7 @@ def eeg_classify(eeg_data, target_data, target_type, model, outdir):
         x_test_data = np.hstack((x_test_z, x_test_v))
 
         # Feature selection with extra trees
-        extra_tree_fs = ensemble.ExtraTreesClassifier()
+        extra_tree_fs = ensemble.ExtraTreesClassifier(random_state=seed)
         feature_model = feature_selection.SelectFromModel(extra_tree_fs, threshold="2*mean")
 
         # Transform train and test data with feature selection model
@@ -207,8 +211,6 @@ def eeg_classify(eeg_data, target_data, target_type, model, outdir):
         cm = metrics.confusion_matrix(y_test, predicted)
         normalized_cm = cm.astype('float')/cm.sum(axis=1)[:, np.newaxis]
 
-        # cm_dict[foldname] = cm
-        # norm_cm_dict[foldname] = normalized_cm
         cm_list.append(cm)
         cm_norm_list.append(normalized_cm)
 
@@ -241,11 +243,9 @@ def eeg_classify(eeg_data, target_data, target_type, model, outdir):
 
     save_xls(scores_dict, join(target_outdir, 'performance.xlsx'))
 
-    # Saving dictionaries
+    # Saving coefficients
     if bool(classifier_coefficients):
         save_xls(classifier_coefficients, join(target_outdir, 'coefficients.xlsx'))
-    # save_xls(cm_dict, join(target_outdir, 'confusion_matrices_non_normalized.xlsx'))
-    # save_xls(norm_cm_dict, join(target_outdir, 'confusion_matrices_normalized.xlsx'))
 
     # Plotting average confusion_matrices
     cm_array = np.asarray(cm_list)
@@ -312,6 +312,10 @@ if __name__ == "__main__":
 
     ml_data = pd.concat([conn_data, covariate_data], axis=1)
     for model in models:
+        output_dir = './../data/%s/' % model
+        if not isdir(output_dir):
+            mkdir(output_dir)
+
         print('%s: Running classification on tinnitus side' % pu.ctime())  # Left, Left>Right, Bil/Holo, Right>Left, Right
         target = convert_tinnitus_data_to_str(behavior_data['tinnitus_side'].values.astype(float) * 2, 'tinnitus_side')
         eeg_classify(eeg_data=ml_data, target_data=target, target_type='tinnitus_side', model=model, outdir=output_dir)
