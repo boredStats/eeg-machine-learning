@@ -321,13 +321,15 @@ if __name__ == "__main__":
         if not isdir(output_dir):
             mkdir(output_dir)
 
-        print('%s: Running classification on tinnitus side' % pu.ctime())  # Left, Left>Right, Bil/Holo, Right>Left, Right
-        target = convert_tinnitus_data_to_str(behavior_data['tinnitus_side'].values.astype(float) * 2, 'tinnitus_side')
-        eeg_classify(eeg_data=ml_data, target_data=target, target_type='tinnitus_side', model=model, outdir=output_dir)
+        print('%s: Running classification on tinnitus side' % pu.ctime())
+        # Left, Left>Right, Bil/Holo, Right>Left, Right
+        t = convert_tinnitus_data_to_str(behavior_data['tinnitus_side'].values.astype(float) * 2, 'tinnitus_side')
+        eeg_classify(eeg_data=ml_data, target_data=t, target_type='tinnitus_side', model=model, outdir=output_dir)
 
-        print('%s: Running classification on tinnitus type' % pu.ctime())  # PureTone, PureTone+NBN, NBN
-        target = convert_tinnitus_data_to_str(np.add(behavior_data['tinnitus_type'].values.astype(int), 1), 'tinnitus_type')
-        eeg_classify(eeg_data=ml_data, target_data=target, target_type='tinnitus_type', model=model, outdir=output_dir)
+        print('%s: Running classification on tinnitus type' % pu.ctime())
+        # PureTone, PureTone+NBN, NBN
+        t = convert_tinnitus_data_to_str(np.add(behavior_data['tinnitus_type'].values.astype(int), 1), 'tinnitus_type')
+        eeg_classify(eeg_data=ml_data, target_data=t, target_type='tinnitus_type', model=model, outdir=output_dir)
 
         print('%s: Running classification on TQ - high/low' % pu.ctime())
         target = behavior_data['distress_TQ'].values
