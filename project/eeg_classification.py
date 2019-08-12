@@ -211,6 +211,9 @@ def eeg_classify(eeg_data, target_data, target_type, model, outdir):
         cm = metrics.confusion_matrix(y_test, predicted)
         normalized_cm = cm.astype('float')/cm.sum(axis=1)[:, np.newaxis]
 
+        cm_dict[foldname] = cm
+        norm_cm_dict[foldname] = normalized_cm
+
         cm_list.append(cm)
         cm_norm_list.append(normalized_cm)
 
@@ -246,6 +249,8 @@ def eeg_classify(eeg_data, target_data, target_type, model, outdir):
     # Saving coefficients
     if bool(classifier_coefficients):
         save_xls(classifier_coefficients, join(target_outdir, 'coefficients.xlsx'))
+    save_xls(cm_dict, join(target_outdir, 'confusion_matrices.xlsx'))
+    save_xls(norm_cm_dict, join(target_outdir, 'confusion_matrices_normalized.xlsx'))
 
     # Plotting average confusion_matrices
     cm_array = np.asarray(cm_list)
@@ -255,7 +260,7 @@ def eeg_classify(eeg_data, target_data, target_type, model, outdir):
     plot_confusion_matrix(sum_cm, clf.classes_, title=title, fname=fname)
 
     cm_array = np.asarray(cm_norm_list)
-    sum_cm = np.sum(cm_array, axis=0).astype(float)
+    sum_cm = np.mean(cm_array, axis=0).astype(float)
     fname = join(target_outdir, 'average confusion matrix normalized')
     title = 'Full normalized confusion matrix over %d folds' % n_splits
     plot_confusion_matrix(sum_cm, clf.classes_, normalize=True, title=title, fname=fname)
