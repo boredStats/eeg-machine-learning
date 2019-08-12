@@ -211,8 +211,8 @@ def eeg_classify(eeg_data, target_data, target_type, model, outdir):
         cm = metrics.confusion_matrix(y_test, predicted)
         normalized_cm = cm.astype('float')/cm.sum(axis=1)[:, np.newaxis]
 
-        cm_dict[foldname] = cm
-        norm_cm_dict[foldname] = normalized_cm
+        cm_dict[foldname] = pd.DataFrame(cm, index=clf.classes_, columns=clf.classes_)
+        norm_cm_dict[foldname] = pd.DataFrame(normalized_cm, index=clf.classes_, columns=clf.classes_)
 
         cm_list.append(cm)
         cm_norm_list.append(normalized_cm)
