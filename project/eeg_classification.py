@@ -4,10 +4,12 @@ import numpy as np
 import pandas as pd
 import pickle as pkl
 import proj_utils as pu
+import matplotlib.pyplot as plt
 from imblearn.over_sampling import RandomOverSampler
 from sklearn import ensemble, feature_selection, model_selection, preprocessing, svm, metrics, linear_model, neighbors
 from sklearn.utils.testing import ignore_warnings
 from sklearn.exceptions import ConvergenceWarning
+
 
 def save_xls(dict_df, path):
     # Save a dictionary of dataframes to an excel file, with each dataframe as a seperate page
@@ -70,8 +72,60 @@ def knn(x_train, y_train, x_test):
     return predicted, clf
 
 
+def plot_confusion_matrix(cm, classes,
+                          normalize=False,
+                          title=None,
+                          cmap=plt.cm.Blues,
+                          fname=None):
+    """
+    This function prints and plots the confusion matrix.
+    Normalization can be applied by setting `normalize=True`.
+
+    Slighlty modifed from sklearn's confusion_matrix examples for our plots
+    """
+    plt.clf()
+    if not title:
+        if normalize:
+            title = 'Normalized confusion matrix'
+        else:
+            title = 'Confusion matrix, without normalization'
+
+    fig, ax = plt.subplots()
+    im = ax.imshow(cm, interpolation='nearest', cmap=cmap)
+    ax.figure.colorbar(im, ax=ax)
+    # We want to show all ticks...
+    ax.set(xticks=np.arange(cm.shape[1]),
+           yticks=np.arange(cm.shape[0]),
+           # ... and label them with the respective list entries
+           xticklabels=classes, yticklabels=classes,
+           title=title,
+           ylabel='True label',
+           xlabel='Predicted label')
+
+    # Rotate the tick labels and set their alignment.
+    plt.setp(ax.get_xticklabels(), rotation=45, ha="right",
+             rotation_mode="anchor")
+
+    # Loop over data dimensions and create text annotations.
+    fmt = '.2f' if normalize else 'd'
+    thresh = cm.max() / 2.
+    for i in range(cm.shape[0]):
+        for j in range(cm.shape[1]):
+            ax.text(j, i, format(cm[i, j], fmt),
+                    ha="center", va="center",
+                    color="white" if cm[i, j] > thresh else "black")
+    fig.tight_layout()
+    if fname is not None:
+        fig.savefig(fname)
+        plt.close(fig)
+
+
 @ignore_warnings(category=ConvergenceWarning)
 def eeg_classify(eeg_data, target_data, target_type, model, outdir):
+    target_outdir = join(outdir, target_type)
+    if not isdir(target_outdir):
+        mkdir(target_outdir)
+
     feature_names = list(eeg_data)
     
     continuous_features = [f for f in feature_names if 'categorical' not in f]
@@ -84,22 +138,18 @@ def eeg_classify(eeg_data, target_data, target_type, model, outdir):
     n_splits = 10
     skf = model_selection.StratifiedKFold(n_splits=n_splits, random_state=13)
 
-    # rownames = ['Fold %02d' % (n+1) for n in range(n_splits)]
-    # score_df = pd.DataFrame(index=rownames, columns=['Balanced accuracy', 'Chance accuracy'])
-    balanced_acc, chance_acc, f1_scores = [], [], []
-
     # Oversample connectivity data, apply k-fold splitter
     resampler = RandomOverSampler(sampling_strategy='not majority', random_state=13)
     x_res, y_res = resampler.fit_resample(eeg_data, target_data)
     skf.get_n_splits(x_res, y_res)
 
     fold_count = 0
-    classifier_objects, classifier_coefficients = {}, {}
-    balanced_acc, chance_acc, f1_scores = [], [], []
+    classifier_objects, classifier_coefficients, cm_dict, norm_cm_dict = {}, {}, {}, {}
+    balanced_acc, chance_acc, f1_scores, cm_list, cm_norm_list = [], [], [], [], []
     for train_idx, test_idx in skf.split(x_res, y_res):
-        foldname = 'Fold %02d' % fold_count + 1
         fold_count += 1
         print('%s: Running FOLD %d for %s' % (pu.ctime(), fold_count, target_type))
+        foldname = 'Fold %02d' % fold_count
 
         # Stratified k-fold splitting
         x_train, x_test = x_res[train_idx], x_res[test_idx]
@@ -135,28 +185,40 @@ def eeg_classify(eeg_data, target_data, target_type, model, outdir):
         if model is 'svm':
             predicted, coef_df, clf = svmc(x_train_fs, y_train, x_test_fs, cleaned_features)
             classifier_coefficients[foldname] = coef_df
-            target_classes = clf.classes_
+
         elif model is 'extra_trees':
             predicted, feature_importances, clf = extra_trees(x_train_fs, y_train, x_test_fs, cleaned_features)
             classifier_coefficients[foldname] = feature_importances
-            target_classes = clf.classes_
+
         elif model is 'sgd':
             predicted, coef_df, clf = sgd(x_train_fs, y_train, x_test_fs, cleaned_features)
             classifier_coefficients[foldname] = coef_df
-            target_classes = clf.classes_
+
         elif model is 'knn':
             predicted, clf = knn(x_train_fs, y_train, x_test_fs)
-            target_classes = clf.classes_
 
+        # Calculating fold performance scores
         balanced, chance, f1 = calc_scores(y_test, predicted)
-
-        # Saving results
-        # score_df.loc[foldname]['Balanced accuracy'] = balanced
-        # score_df.loc[foldname]['Chance accuracy'] = chance
         balanced_acc.append(balanced)
         chance_acc.append(chance)
-        f1_scores.append(f1)  # f1_df.loc[foldname][:] = f1
+        f1_scores.append(f1)
 
+        # Calculating fold confusion matrix
+        cm = metrics.confusion_matrix(y_test, predicted)
+        normalized_cm = cm.astype('float')/cm.sum(axis=1)[:, np.newaxis]
+
+        # cm_dict[foldname] = cm
+        # norm_cm_dict[foldname] = normalized_cm
+        cm_list.append(cm)
+        cm_norm_list.append(normalized_cm)
+
+        fname = join(target_outdir, 'confusion matrix %s' % foldname)
+        plot_confusion_matrix(cm, classes=clf.classes_, normalize=False, fname=fname)
+
+        fname = join(target_outdir, 'confusion matrix normalized %s' % foldname)
+        plot_confusion_matrix(normalized_cm, classes=clf.classes_, normalize=True, fname=fname)
+
+    # Saving performance scores
     f1_array = np.asarray(f1_scores)
     f1_class_averages = np.mean(f1_array, axis=0)
     f1_data = np.vstack((f1_array, f1_class_averages))
@@ -173,18 +235,32 @@ def eeg_classify(eeg_data, target_data, target_type, model, outdir):
     rownames.append('Average')
     score_df = pd.DataFrame(data=accuracy_data, index=rownames, columns=['Balanced accuracy', 'Chance accuracy'])
 
-    f1_df = pd.DataFrame(data=np.asarray(f1_data), index=rownames, columns=target_classes)
+    f1_df = pd.DataFrame(data=np.asarray(f1_data), index=rownames, columns=clf.classes_)
     scores_dict = {'accuracy scores': score_df,
                    'f1 scores': f1_df}
 
-    target_outdir = join(outdir, target_type)
-    if not isdir(target_outdir):
-        mkdir(target_outdir)
-
     save_xls(scores_dict, join(target_outdir, 'performance.xlsx'))
+
+    # Saving dictionaries
     if bool(classifier_coefficients):
         save_xls(classifier_coefficients, join(target_outdir, 'coefficients.xlsx'))
+    # save_xls(cm_dict, join(target_outdir, 'confusion_matrices_non_normalized.xlsx'))
+    # save_xls(norm_cm_dict, join(target_outdir, 'confusion_matrices_normalized.xlsx'))
 
+    # Plotting average confusion_matrices
+    cm_array = np.asarray(cm_list)
+    sum_cm = np.sum(cm_array, axis=0).astype(int)
+    fname = join(target_outdir, 'average confusion matrix')
+    title = 'Full confusion matrix over %d folds, without normalization' % n_splits
+    plot_confusion_matrix(sum_cm, clf.classes_, title=title, fname=fname)
+
+    cm_array = np.asarray(cm_norm_list)
+    sum_cm = np.sum(cm_array, axis=0).astype(float)
+    fname = join(target_outdir, 'average confusion matrix normalized')
+    title = 'Full normalized confusion matrix over %d folds' % n_splits
+    plot_confusion_matrix(sum_cm, clf.classes_, normalize=True, title=title, fname=fname)
+
+    # Saving classifier object
     with open(join(target_outdir, 'classifier_object.pkl'), 'wb') as file:
         pkl.dump(clf, file)
 
@@ -196,11 +272,11 @@ def convert_tinnitus_data_to_str(tinnitus_data, data_type):
             if t == -2:
                 str_data.append('Left')
             elif t == -1:
-                str_data.append('Left_over_Right')
+                str_data.append('Left>Right')
             elif t == 0:
                 str_data.append('Bilateral')
             elif t == 1:
-                str_data.append('R_over_Left')
+                str_data.append('Right>Left')
             elif t == 2:
                 str_data.append('Right')
         if len(str_data) != len(tinnitus_data):
@@ -213,7 +289,8 @@ def convert_tinnitus_data_to_str(tinnitus_data, data_type):
                 str_data.append('PT_and_NBN')
             elif t == 2:
                 str_data.append('NBN')
-        if len(str_data) != len(tinnitus_data): raise ValueError('Type data not parsed correctly')
+        if len(str_data) != len(tinnitus_data):
+            raise ValueError('Type data not parsed correctly')
     return str_data
 
 
@@ -234,27 +311,27 @@ if __name__ == "__main__":
     covariate_data = pd.concat([behavior_data['age'], dummy_coded_categorical], axis=1)
 
     ml_data = pd.concat([conn_data, covariate_data], axis=1)
+    for model in models:
+        print('%s: Running classification on tinnitus side' % pu.ctime())  # Left, Left>Right, Bil/Holo, Right>Left, Right
+        target = convert_tinnitus_data_to_str(behavior_data['tinnitus_side'].values.astype(float) * 2, 'tinnitus_side')
+        eeg_classify(eeg_data=ml_data, target_data=target, target_type='tinnitus_side', model=model, outdir=output_dir)
 
-    print('%s: Running classification on tinnitus side' % pu.ctime())  # Left, Left>Right, Bil/Holo, Right>Left, Right
-    target = convert_tinnitus_data_to_str(behavior_data['tinnitus_side'].values.astype(float) * 2, 'tinnitus_side')
-    eeg_classify(eeg_data=ml_data, target_data=target, target_type='tinnitus_side', model=model, outdir=output_dir)
+        print('%s: Running classification on tinnitus type' % pu.ctime())  # PureTone, PureTone+NBN, NBN
+        target = convert_tinnitus_data_to_str(np.add(behavior_data['tinnitus_type'].values.astype(int), 1), 'tinnitus_type')
+        eeg_classify(eeg_data=ml_data, target_data=target, target_type='tinnitus_type', model=model, outdir=output_dir)
 
-    # print('%s: Running classification on tinnitus type' % pu.ctime())  # PureTone, PureTone+NBN, NBN
-    # target = convert_tinnitus_data_to_str(np.add(behavior_data['tinnitus_type'].values.astype(int), 1), 'tinnitus_type')
-    # eeg_classify(eeg_data=ml_data, target_data=target, target_type='tinnitus_type', model=model, outdir=output_dir)
-    #
-    # print('%s: Running classification on TQ - high/low' % pu.ctime())
-    # target = behavior_data['distress_TQ'].values
-    # high_low_thresholds = [0, 46, 84]
-    # binned_target = np.digitize(target, bins=high_low_thresholds, right=True)
-    # target = ['TQ_high' if t > 1 else 'TQ_low' for t in binned_target]
-    # eeg_classify(eeg_data=ml_data, target_data=target, target_type='TQ_high_low', model=model, outdir=output_dir)
-    #
-    # print('%s: Running classification on TQ - grade' % pu.ctime())
-    # target = behavior_data['distress_TQ'].values
-    # grade_thresholds = [0, 30, 46, 59, 84]
-    # binned_target = np.digitize(target, bins=grade_thresholds, right=True)
-    # target = ['Grade_%d' % t for t in binned_target]
-    # eeg_classify(eeg_data=ml_data, target_data=target, target_type='TQ_grade', model=model, outdir=output_dir)
+        print('%s: Running classification on TQ - high/low' % pu.ctime())
+        target = behavior_data['distress_TQ'].values
+        high_low_thresholds = [0, 46, 84]
+        binned_target = np.digitize(target, bins=high_low_thresholds, right=True)
+        target = ['TQ_high' if t > 1 else 'TQ_low' for t in binned_target]
+        eeg_classify(eeg_data=ml_data, target_data=target, target_type='TQ_high_low', model=model, outdir=output_dir)
+
+        print('%s: Running classification on TQ - grade' % pu.ctime())
+        target = behavior_data['distress_TQ'].values
+        grade_thresholds = [0, 30, 46, 59, 84]
+        binned_target = np.digitize(target, bins=grade_thresholds, right=True)
+        target = ['Grade_%d' % t for t in binned_target]
+        eeg_classify(eeg_data=ml_data, target_data=target, target_type='TQ_grade', model=model, outdir=output_dir)
 
     print('%s: Finished' % pu.ctime())
