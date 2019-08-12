@@ -1,4 +1,5 @@
-from os.path import join
+from os.path import join, isdir
+from os import mkdir
 from itertools import repeat
 import numpy as np
 import pandas as pd
@@ -22,25 +23,29 @@ def plot_formatted_confusion_matrix(confusion_matrix, ordered_strings=None, new_
         map = dict(zip(old_strings, new_strings))
         plot_matrix.rename(map, axis=0, inplace=True)
         plot_matrix.rename(map, axis=1, inplace=True)
+    plot_matrix.fillna(value=np.nan, inplace=True)
 
     if norm:
         vmin, vmax = 0, 1
-        fmt = '.2g'
+        fmt = ".2g"
     else:
         vmin, vmax = None, None
-        fmt = 'g'
+        fmt = "g"
     cmap = plt.cm.Blues
     sns.set(context='notebook', font_scale=1.3)
+
     fig, ax = plt.subplots(figsize=(8, 6))
-    sns.heatmap(data=plot_matrix.astype(float), vmin=vmin, vmax=vmax, fmt=fmt, annot=True, ax=ax, cmap=cmap)
+    sns.heatmap(data=plot_matrix, vmin=vmin, vmax=vmax, fmt=fmt, annot=True, ax=ax, cmap=cmap)
     ax.set_xlabel('Predicted label', fontsize='large')
     ax.set_ylabel('True label', fontsize='large')
     # ax.set_xticklabels(plt.xticks()[1], rotation=45)  # apply xtick rotation
     ax.set_yticklabels(plt.yticks()[1], va='center')  # manual vertical alignment of yticks
 
-    plt.show()
     if fname is not None:
         fig.savefig(fname, bbox_inches='tight')
+    else:
+        plt.show()
+    plt.close(fig)
 
 
 def format_accuracy_df_for_box_plot(accuracy_df):
@@ -115,14 +120,66 @@ def conf_mat_testing(fname=None):
     cm_df = pd.DataFrame(avg_cm_array, index=list(cm_sheet), columns=list(cm_sheet))
     plot_formatted_confusion_matrix(cm_df, ordered_strings=or_str, new_strings=new_str, norm=False, fname=fname)
 
-    # cm_sheet = pd.read_excel(join(tin_dir, 'confusion_matrices.xlsx'), sheet_name='Fold 01', index_col=0)
-    # ord_strings = ['Left', 'Left>Right', 'Bilateral', 'Right>Left', 'Right']
-    # new_strings = ['L', 'L>R', 'L=R', 'R>L', 'R']
-    # plot_formatted_confusion_matrix(cm_sheet, ordered_strings=or_str, new_strings=new_str, norm=False, fname=fname)
+    cm_sheet = pd.read_excel(join(tin_dir, 'confusion_matrices.xlsx'), sheet_name='Fold 01', index_col=0)
+    plot_formatted_confusion_matrix(cm_sheet, ordered_strings=or_str, new_strings=new_str, norm=True, fname=fname)
+
+
+def replot_confusion_matrices():
+    models = ['svm', 'extra_trees', 'sgd', 'knn']
+    variables = ['tinnitus_side', 'tinnitus_type', 'TQ_grade', 'TQ_high_low']
+
+    for model in models:
+        output_dir = './../data/%s/' % model
+        for tin_variable in variables:
+            if 'side' in tin_variable:
+                or_str = ['Left', 'Left>Right', 'Bilateral', 'Right>Left', 'Right']
+                new_str = ['L', 'L>R', 'L=R', 'R>L', 'R']
+            elif 'type' in tin_variable:
+                or_str = ['NBN', 'PT_and_NBN', 'PT']
+                new_str = ['NBN', 'PT+NBN', 'PT']
+            else:
+                or_str, new_str = None, None
+
+            tin_dir = join(output_dir, tin_variable)
+            plot_dir = join(tin_dir, 'figures')
+            if not isdir(plot_dir):
+                mkdir(plot_dir)
+
+            xls = pd.ExcelFile(join(tin_dir, 'confusion_matrices.xlsx'))
+            cm_arrays = []
+            for sheet in xls.sheet_names:
+                cm_sheet = pd.read_excel(xls, sheet_name=sheet, index_col=0)
+                cm = cm_sheet
+                cm_arrays.append(cm.values)
+                f = join(plot_dir, 'confusion matrix %s.png' % sheet)
+                plot_formatted_confusion_matrix(cm, ordered_strings=or_str, new_strings=new_str, norm=False, fname=f)
+
+            avg_cm_array = np.sum(np.asarray(cm_arrays), axis=0)
+            avg_cm = pd.DataFrame(avg_cm_array, index=list(cm_sheet), columns=list(cm_sheet))
+
+            f = join(plot_dir, 'average confusion matrix.png')
+            plot_formatted_confusion_matrix(avg_cm, ordered_strings=or_str, new_strings=new_str, norm=False, fname=f)
+
+            xls = pd.ExcelFile(join(tin_dir, 'confusion_matrices_normalized.xlsx'))
+            cm_arrays = []
+            for sheet in xls.sheet_names:
+                cm_sheet = pd.read_excel(xls, sheet_name=sheet, index_col=0)
+                cm = cm_sheet
+                cm_arrays.append(cm.values)
+                f = join(plot_dir, 'confusion matrix normalized %s.png' % sheet)
+                plot_formatted_confusion_matrix(cm, ordered_strings=or_str, new_strings=new_str, norm=True, fname=f)
+
+            avg_cm_array = np.mean(np.asarray(cm_arrays), axis=0)
+            avg_cm = pd.DataFrame(avg_cm_array, index=list(cm_sheet), columns=list(cm_sheet))
+
+            f = join(plot_dir, 'average confusion matrix normalized.png')
+            plot_formatted_confusion_matrix(avg_cm, ordered_strings=or_str, new_strings=new_str, norm=True, fname=f)
+
 
 
 if __name__ == "__main__":
     models = ['svm', 'extra_trees', 'sgd', 'knn']
     variables = ['tinnitus_side', 'tinnitus_type', 'TQ_grade', 'TQ_high_low']
     # boxplot_testing()
-    conf_mat_testing(fname='test_confusion_matrix.png')
+    # conf_mat_testing(fname='test_confusion_matrix.png')
+    replot_confusion_matrices()

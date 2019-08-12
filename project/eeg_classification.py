@@ -76,54 +76,6 @@ def knn(x_train, y_train, x_test):
     return predicted, clf
 
 
-def plot_confusion_matrix(cm, classes,
-                          normalize=False,
-                          title=None,
-                          cmap=plt.cm.Blues,
-                          fname=None):
-    """
-    This function prints and plots the confusion matrix.
-    Normalization can be applied by setting `normalize=True`.
-
-    Slighlty modifed from sklearn's confusion_matrix examples for our plots
-    """
-    plt.clf()
-    if not title:
-        if normalize:
-            title = 'Normalized confusion matrix'
-        else:
-            title = 'Confusion matrix, without normalization'
-
-    fig, ax = plt.subplots()
-    im = ax.imshow(cm, interpolation='nearest', cmap=cmap)
-    ax.figure.colorbar(im, ax=ax)
-    # We want to show all ticks...
-    ax.set(xticks=np.arange(cm.shape[1]),
-           yticks=np.arange(cm.shape[0]),
-           # ... and label them with the respective list entries
-           xticklabels=classes, yticklabels=classes,
-           title=title,
-           ylabel='True label',
-           xlabel='Predicted label')
-
-    # Rotate the tick labels and set their alignment.
-    plt.setp(ax.get_xticklabels(), rotation=45, ha="right",
-             rotation_mode="anchor")
-
-    # Loop over data dimensions and create text annotations.
-    fmt = '.2f' if normalize else 'd'
-    thresh = cm.max() / 2.
-    for i in range(cm.shape[0]):
-        for j in range(cm.shape[1]):
-            ax.text(j, i, format(cm[i, j], fmt),
-                    ha="center", va="center",
-                    color="white" if cm[i, j] > thresh else "black")
-    fig.tight_layout()
-    if fname is not None:
-        fig.savefig(fname)
-        plt.close(fig)
-
-
 @ignore_warnings(category=ConvergenceWarning)
 def eeg_classify(eeg_data, target_data, target_type, model, outdir):
     target_outdir = join(outdir, target_type)
@@ -251,19 +203,6 @@ def eeg_classify(eeg_data, target_data, target_type, model, outdir):
         save_xls(classifier_coefficients, join(target_outdir, 'coefficients.xlsx'))
     save_xls(cm_dict, join(target_outdir, 'confusion_matrices.xlsx'))
     save_xls(norm_cm_dict, join(target_outdir, 'confusion_matrices_normalized.xlsx'))
-
-    # Plotting average confusion_matrices
-    cm_array = np.asarray(cm_list)
-    sum_cm = np.sum(cm_array, axis=0).astype(int)
-    fname = join(target_outdir, 'average confusion matrix')
-    title = 'Full confusion matrix over %d folds, without normalization' % n_splits
-    plot_confusion_matrix(sum_cm, clf.classes_, title=title, fname=fname)
-
-    cm_array = np.asarray(cm_norm_list)
-    sum_cm = np.mean(cm_array, axis=0).astype(float)
-    fname = join(target_outdir, 'average confusion matrix normalized')
-    title = 'Full normalized confusion matrix over %d folds' % n_splits
-    plot_confusion_matrix(sum_cm, clf.classes_, normalize=True, title=title, fname=fname)
 
     # Saving classifier object
     with open(join(target_outdir, 'classifier_object.pkl'), 'wb') as file:
