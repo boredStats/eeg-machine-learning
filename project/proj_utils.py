@@ -171,7 +171,15 @@ def dummy_code_binary(categorical_series):
     return dummy_series.rename(columns=dict(zip(old_names, ['categorical_%s' % d for d in old_names])))
 
 
-def main():
+def save_xls(dict_df, path):
+    # Save a dictionary of dataframes to an excel file, with each dataframe as a seperate page
+    writer = pd.ExcelWriter(path)
+    for key in list(dict_df):
+        dict_df[key].to_excel(writer, '%s' % key)
+    writer.save()
+
+
+def perf_testing():
     # Sandbox stuff
     print(ctime())
 
@@ -185,4 +193,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    perf_testing()
