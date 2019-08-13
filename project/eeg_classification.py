@@ -169,12 +169,6 @@ def eeg_classify(eeg_data, target_data, target_type, model, outdir):
         cm_list.append(cm)
         cm_norm_list.append(normalized_cm)
 
-        fname = join(target_outdir, 'confusion matrix %s' % foldname)
-        plot_confusion_matrix(cm, classes=clf.classes_, normalize=False, fname=fname)
-
-        fname = join(target_outdir, 'confusion matrix normalized %s' % foldname)
-        plot_confusion_matrix(normalized_cm, classes=clf.classes_, normalize=True, fname=fname)
-
     # Saving performance scores
     f1_array = np.asarray(f1_scores)
     f1_class_averages = np.mean(f1_array, axis=0)
