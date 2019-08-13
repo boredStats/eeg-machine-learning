@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 import proj_utils as pu
 
 
-def plot_formatted_confusion_matrix(confusion_matrix, ordered_strings=None, new_strings=None, norm=True, fname=None):
+def plot_confusion_matrix(confusion_matrix, ordered_strings=None, new_strings=None, norm=True, fname=None):
     if ordered_strings is not None:
         temp = confusion_matrix[ordered_strings]   # Create temp df with reordered columns
         plot_matrix = pd.DataFrame(columns=ordered_strings)  # Final df with reordered rows
@@ -118,10 +118,10 @@ def conf_mat_testing(fname=None):
         cm_arrays.append(cm_sheet.values)
     avg_cm_array = np.sum(np.asarray(cm_arrays), axis=0)
     cm_df = pd.DataFrame(avg_cm_array, index=list(cm_sheet), columns=list(cm_sheet))
-    plot_formatted_confusion_matrix(cm_df, ordered_strings=or_str, new_strings=new_str, norm=False, fname=fname)
+    plot_confusion_matrix(cm_df, ordered_strings=or_str, new_strings=new_str, norm=False, fname=fname)
 
     cm_sheet = pd.read_excel(join(tin_dir, 'confusion_matrices.xlsx'), sheet_name='Fold 01', index_col=0)
-    plot_formatted_confusion_matrix(cm_sheet, ordered_strings=or_str, new_strings=new_str, norm=True, fname=fname)
+    plot_confusion_matrix(cm_sheet, ordered_strings=or_str, new_strings=new_str, norm=True, fname=fname)
 
 
 def replot_confusion_matrices():
@@ -141,40 +141,28 @@ def replot_confusion_matrices():
                 or_str, new_str = None, None
 
             tin_dir = join(output_dir, tin_variable)
-            plot_dir = join(tin_dir, 'figures')
-            if not isdir(plot_dir):
-                mkdir(plot_dir)
 
             xls = pd.ExcelFile(join(tin_dir, 'confusion_matrices.xlsx'))
             cm_arrays = []
             for sheet in xls.sheet_names:
                 cm_sheet = pd.read_excel(xls, sheet_name=sheet, index_col=0)
-                cm = cm_sheet
-                cm_arrays.append(cm.values)
-                f = join(plot_dir, 'confusion matrix %s.png' % sheet)
-                plot_formatted_confusion_matrix(cm, ordered_strings=or_str, new_strings=new_str, norm=False, fname=f)
+                cm_arrays.append(cm_sheet.values)
 
             avg_cm_array = np.sum(np.asarray(cm_arrays), axis=0)
             avg_cm = pd.DataFrame(avg_cm_array, index=list(cm_sheet), columns=list(cm_sheet))
-
-            f = join(plot_dir, 'average confusion matrix.png')
-            plot_formatted_confusion_matrix(avg_cm, ordered_strings=or_str, new_strings=new_str, norm=False, fname=f)
+            fname = join(tin_dir, 'average confusion matrix.png')
+            plot_confusion_matrix(avg_cm, ordered_strings=or_str, new_strings=new_str, norm=False, fname=fname)
 
             xls = pd.ExcelFile(join(tin_dir, 'confusion_matrices_normalized.xlsx'))
             cm_arrays = []
             for sheet in xls.sheet_names:
                 cm_sheet = pd.read_excel(xls, sheet_name=sheet, index_col=0)
-                cm = cm_sheet
-                cm_arrays.append(cm.values)
-                f = join(plot_dir, 'confusion matrix normalized %s.png' % sheet)
-                plot_formatted_confusion_matrix(cm, ordered_strings=or_str, new_strings=new_str, norm=True, fname=f)
+                cm_arrays.append(cm_sheet.values)
 
             avg_cm_array = np.mean(np.asarray(cm_arrays), axis=0)
             avg_cm = pd.DataFrame(avg_cm_array, index=list(cm_sheet), columns=list(cm_sheet))
-
-            f = join(plot_dir, 'average confusion matrix normalized.png')
-            plot_formatted_confusion_matrix(avg_cm, ordered_strings=or_str, new_strings=new_str, norm=True, fname=f)
-
+            fname = join(tin_dir, 'average confusion matrix normalized.png')
+            plot_confusion_matrix(avg_cm, ordered_strings=or_str, new_strings=new_str, norm=True, fname=fname)
 
 
 if __name__ == "__main__":
