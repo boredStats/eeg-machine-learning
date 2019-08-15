@@ -4,7 +4,6 @@ import numpy as np
 import pandas as pd
 import pickle as pkl
 import proj_utils as pu
-import matplotlib.pyplot as plt
 from imblearn.over_sampling import RandomOverSampler
 from sklearn import ensemble, feature_selection, model_selection, preprocessing, svm, metrics, linear_model, neighbors
 from sklearn.utils.testing import ignore_warnings
@@ -76,8 +75,49 @@ def knn(x_train, y_train, x_test):
     return predicted, clf
 
 
+def resample_multilabel(data, target):
+    """
+    1. Convert an [n_samples, n_variables] array to a [n_samples] vector (One-vs-Rest problem)
+    2. Apply LP transformation, then resample
+    3. ???
+    4. Profit
+    """
+    target = target.astype(int)
+
+    def combine_anx_dep_to_str(hads_data):
+        vartypes = ['anxiety', 'depression']
+        combined_classes = []
+        for row in range(hads_data.shape[0]):
+            str_combos = []
+            for col in range(hads_data.shape[1]):
+                val = hads_data[row, col]
+                if val == 0:
+                    str_convert = '%s_normal' % vartypes[col]
+                elif val == 1:
+                    str_convert = '%s_borderline' % vartypes[col]
+                elif val == 2:
+                    str_convert = '%s_abnormal' % vartypes[col]
+                str_combos.append(str_convert)
+            hads_combined = '%s-%s' % (str_combos[0], str_combos[1])
+            combined_classes.append(hads_combined)
+        return combined_classes
+
+    hads_to_string = combine_anx_dep_to_str(target)
+    lb = preprocessing.LabelBinarizer()
+    indicator_matrix = lb.fit_transform(hads_to_string)
+
+    from skmultilearn.problem_transform import LabelPowerset
+    lp = LabelPowerset()
+    resampler = RandomOverSampler(sampling_strategy='not majority', random_state=seed)
+    target_transformed = lp.transform(indicator_matrix)
+
+    data_resampled, target_resampled = resampler.fit_sample(data, target_transformed)
+    target_resampled_binary = lp.inverse_transform(target_resampled)
+    return data_resampled, target_resampled, target_resampled_binary
+
+
 @ignore_warnings(category=ConvergenceWarning)
-def eeg_classify(eeg_data, target_data, target_type, model, outdir):
+def eeg_classify(eeg_data, target_data, target_type, model, outdir, multi=False):
     target_outdir = join(outdir, target_type)
     if not isdir(target_outdir):
         mkdir(target_outdir)
@@ -95,13 +135,16 @@ def eeg_classify(eeg_data, target_data, target_type, model, outdir):
     skf = model_selection.StratifiedKFold(n_splits=n_splits, random_state=seed)
 
     # Oversample connectivity data, apply k-fold splitter
-    resampler = RandomOverSampler(sampling_strategy='not majority', random_state=seed)
-    x_res, y_res = resampler.fit_resample(eeg_data, target_data)
+    if multi:  # if LP-transformation has been applied to create a OVR problem
+        x_res, y_res, _ = resample_multilabel(ml_data, target_data)
+    else:
+        resampler = RandomOverSampler(sampling_strategy='not majority', random_state=seed)
+        x_res, y_res = resampler.fit_resample(eeg_data, target_data)
     skf.get_n_splits(x_res, y_res)
 
     fold_count = 0
     classifier_objects, classifier_coefficients, cm_dict, norm_cm_dict = {}, {}, {}, {}
-    balanced_acc, chance_acc, f1_scores, cm_list, cm_norm_list = [], [], [], [], []
+    balanced_acc, chance_acc, f1_scores = [], [], []
     for train_idx, test_idx in skf.split(x_res, y_res):
         fold_count += 1
         print('%s: Running FOLD %d for %s' % (pu.ctime(), fold_count, target_type))
@@ -165,9 +208,6 @@ def eeg_classify(eeg_data, target_data, target_type, model, outdir):
 
         cm_dict[foldname] = pd.DataFrame(cm, index=clf.classes_, columns=clf.classes_)
         norm_cm_dict[foldname] = pd.DataFrame(normalized_cm, index=clf.classes_, columns=clf.classes_)
-
-        cm_list.append(cm)
-        cm_norm_list.append(normalized_cm)
 
     # Saving performance scores
     f1_array = np.asarray(f1_scores)
@@ -277,5 +317,6 @@ if __name__ == "__main__":
         binned_target = np.digitize(target, bins=grade_thresholds, right=True)
         target = ['Grade_%d' % t for t in binned_target]
         eeg_classify(eeg_data=ml_data, target_data=target, target_type='TQ_grade', model=model, outdir=output_dir)
+
 
     print('%s: Finished' % pu.ctime())
