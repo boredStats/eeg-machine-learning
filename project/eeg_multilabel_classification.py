@@ -291,4 +291,3 @@ for model in multilabel_models:
 
     multi_target = np.vstack((anx_binned, dep_binned)).T
     eeg_multilabel_classify(ml_data, multi_target, target_type='hads_multilabel', model=model, outdir=output_dir)
-    break
