@@ -186,8 +186,14 @@ def eeg_multilabel_classify(ml_data, target_data, target_type, model, outdir):
         anx_cm = metrics.confusion_matrix(yt, pred)
         anx_normalized_cm = anx_cm.astype('float')/anx_cm.sum(axis=1)[:, np.newaxis]
 
-        anx_cm_dict[foldname] = pd.DataFrame(anx_cm, index=clf.classes_, columns=clf.classes_)
-        anx_norm_cm_dict[foldname] = pd.DataFrame(anx_normalized_cm, index=clf.classes_, columns=clf.classes_)
+        classes = []
+        for subclass_list in clf.classes_:
+            classes.extend(list(subclass_list))
+        anx_classes = [c for c in classes if 'anxiety' in c]
+        dep_classes = [c for c in classes if 'depression' in c]
+
+        anx_cm_dict[foldname] = pd.DataFrame(anx_cm, index=anx_classes, columns=anx_classes)
+        anx_norm_cm_dict[foldname] = pd.DataFrame(anx_normalized_cm, index=anx_classes, columns=anx_classes)
 
         # Depression predictions
         yt, pred = y_test[:, 1], predicted[:, 1]
@@ -200,13 +206,13 @@ def eeg_multilabel_classify(ml_data, target_data, target_type, model, outdir):
         dep_cm = metrics.confusion_matrix(yt, pred)
         dep_normalized_cm = dep_cm.astype('float')/dep_cm.sum(axis=1)[:, np.newaxis]
 
-        dep_cm_dict[foldname] = pd.DataFrame(dep_cm, index=clf.classes_, columns=clf.classes_)
-        dep_norm_cm_dict[foldname] = pd.DataFrame(dep_normalized_cm, index=clf.classes_, columns=clf.classes_)
+        dep_cm_dict[foldname] = pd.DataFrame(dep_cm, index=dep_classes, columns=dep_classes)
+        dep_norm_cm_dict[foldname] = pd.DataFrame(dep_normalized_cm, index=dep_classes, columns=dep_classes)
 
     # Saving anxiety performance scores
     anx_f1_array = np.asarray(anx_f1_scores)
-    f1_class_averages = np.mean(anx_f1_array, axis=0)
-    f1_data = np.vstack((anx_f1_array, f1_class_averages))
+    anx_f1_class_averages = np.mean(anx_f1_array, axis=0)
+    anx_f1_data = np.vstack((anx_f1_array, anx_f1_class_averages))
 
     balanced_acc_avg = np.mean(anx_balanced_acc)
     chance_acc_avg = np.mean(anx_chance_acc)
@@ -220,7 +226,7 @@ def eeg_multilabel_classify(ml_data, target_data, target_type, model, outdir):
     rownames.append('Average')
     score_df = pd.DataFrame(data=accuracy_data, index=rownames, columns=['Balanced accuracy', 'Chance accuracy'])
 
-    f1_df = pd.DataFrame(data=np.asarray(f1_data), index=rownames, columns=clf.classes_)
+    f1_df = pd.DataFrame(data=np.asarray(anx_f1_data), index=rownames, columns=anx_classes)
     scores_dict = {'accuracy scores': score_df,
                    'f1 scores': f1_df}
 
@@ -228,8 +234,8 @@ def eeg_multilabel_classify(ml_data, target_data, target_type, model, outdir):
 
     # Saving performance scores
     dep_f1_array = np.asarray(dep_f1_scores)
-    f1_class_averages = np.mean(dep_f1_array, axis=0)
-    f1_data = np.vstack((dep_f1_array, f1_class_averages))
+    dep_f1_class_averages = np.mean(dep_f1_array, axis=0)
+    dep_f1_data = np.vstack((dep_f1_array, dep_f1_class_averages))
 
     balanced_acc_avg = np.mean(dep_balanced_acc)
     chance_acc_avg = np.mean(dep_chance_acc)
@@ -243,7 +249,7 @@ def eeg_multilabel_classify(ml_data, target_data, target_type, model, outdir):
     rownames.append('Average')
     score_df = pd.DataFrame(data=accuracy_data, index=rownames, columns=['Balanced accuracy', 'Chance accuracy'])
 
-    f1_df = pd.DataFrame(data=np.asarray(f1_data), index=rownames, columns=clf.classes_)
+    f1_df = pd.DataFrame(data=np.asarray(dep_f1_data), index=rownames, columns=dep_classes)
     scores_dict = {'accuracy scores': score_df,
                    'f1 scores': f1_df}
 
