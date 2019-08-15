@@ -8,7 +8,7 @@ from imblearn.over_sampling import RandomOverSampler
 from sklearn import ensemble, feature_selection, model_selection, preprocessing, metrics
 from sklearn.utils.testing import ignore_warnings
 from sklearn.exceptions import ConvergenceWarning
-from eeg_classification import extra_trees, knn
+from eeg_classification import extra_trees, knn, calc_scores
 
 
 seed = 13
@@ -52,14 +52,22 @@ def resample_multilabel(data, target):
 
     from skmultilearn.problem_transform import LabelPowerset
     lp = LabelPowerset()
-    resampler = RandomOverSampler(sampling_strategy='not majority', random_state=seed)
     target_lp_transformed = lp.transform(binary_matrix)
 
+    resampler = RandomOverSampler(sampling_strategy='not majority', random_state=seed)
     data_resampled, target_lp_transformed_resampled = resampler.fit_sample(data, target_lp_transformed)
     binary_matrix_resampled = lp.inverse_transform(target_lp_transformed_resampled)
+
     target_resampled_multilabel = mlb.inverse_transform(binary_matrix_resampled)
     target_resampled_multilabel_array = convert_str_to_hads(target_resampled_multilabel)
-    return data_resampled, target_resampled_multilabel_array
+
+    anx_resampled_to_str = convert_hads_to_str(target_resampled_multilabel_array[:, 0], 'anxiety')
+    dep_resampled_to_str = convert_hads_to_str(target_resampled_multilabel_array[:, 1], 'depression')
+    target_resampled_multilabel_df = pd.DataFrame()
+    target_resampled_multilabel_df['anxiety'] = anx_resampled_to_str
+    target_resampled_multilabel_df['depression'] = dep_resampled_to_str
+
+    return data_resampled, target_resampled_multilabel_df.values, target_lp_transformed_resampled
 
 
 def feature_selection_with_covariates(x_train, x_test, y_train, continuous_indices, categorical_indices, feature_names):
@@ -126,23 +134,23 @@ def eeg_multilabel_classify(ml_data, target_data, target_type, model, outdir):
 
     # Oversample connectivity data, apply k-fold splitter
     """Note: LP-transformation has to be applied for resampling, even though we're not treating it as a OVR problem"""
-    x_res, y_res = resample_multilabel(ml_data, target_data)
-    print(x_res.shape)
-    print(y_res.shape)
-    skf.get_n_splits(x_res, y_res)
+    x_res, y_res, y_res_lp_transformed = resample_multilabel(ml_data, target_data)
+    skf.get_n_splits(x_res, y_res_lp_transformed)
 
     fold_count = 0
-    classifier_objects, classifier_coefficients, cm_dict, norm_cm_dict = {}, {}, {}, {}
-    balanced_acc, chance_acc, f1_scores = [], [], []
+    classifier_objects, classifier_coefficients = {}, {}
+    anx_balanced_acc, anx_chance_acc, anx_f1_scores = [], [], []
+    dep_balanced_acc, dep_chance_acc, dep_f1_scores = [], [], []
+    anx_cm_dict, anx_norm_cm_dict, dep_cm_dict, dep_norm_cm_dict = {}, {}, {}, {}
 
-    for train_idx, test_idx in skf.split(x_res, y_res):
+    for train_idx, test_idx in skf.split(x_res, y_res_lp_transformed):
         fold_count += 1
         print('%s: Running FOLD %d for %s' % (pu.ctime(), fold_count, target_type))
         foldname = 'Fold %02d' % fold_count
 
         # Stratified k-fold splitting
-        x_train, x_test = x_res[train_idx], x_res[test_idx]
-        y_train, y_test = y_res[train_idx], y_res[test_idx]
+        x_train, x_test = x_res[train_idx], x_res[test_idx, :]
+        y_train, y_test = y_res[train_idx], y_res[test_idx, :]
 
         if "categorical_sex_male" in feature_names:
             continuous_features = [f for f in feature_names if 'categorical' not in f]
@@ -157,6 +165,105 @@ def eeg_multilabel_classify(ml_data, target_data, target_type, model, outdir):
             x_train_feature_selected, x_test_feature_selected, cleaned_features = feature_selection_without_covariates(
                 x_train, x_test, y_train, feature_names)
 
+        if model is 'extra_trees':
+            predicted, feature_importances, clf = extra_trees(
+                x_train_feature_selected, y_train, x_test_feature_selected, cleaned_features)
+            classifier_coefficients[foldname] = feature_importances
+
+        elif model is 'knn':
+            predicted, clf = knn(x_train_feature_selected, y_train, x_test_feature_selected)
+
+        classifier_objects[foldname] = clf
+
+        # Anxiety predictions
+        yt, pred = y_test[:, 0], predicted[:, 0]
+        balanced, chance, f1 = calc_scores(yt, pred)
+        anx_balanced_acc.append(balanced)
+        anx_chance_acc.append(chance)
+        anx_f1_scores.append(f1)
+
+        # Calculating fold confusion matrix
+        anx_cm = metrics.confusion_matrix(yt, pred)
+        anx_normalized_cm = anx_cm.astype('float')/anx_cm.sum(axis=1)[:, np.newaxis]
+
+        anx_cm_dict[foldname] = pd.DataFrame(anx_cm, index=clf.classes_, columns=clf.classes_)
+        anx_norm_cm_dict[foldname] = pd.DataFrame(anx_normalized_cm, index=clf.classes_, columns=clf.classes_)
+
+        # Depression predictions
+        yt, pred = y_test[:, 1], predicted[:, 1]
+        balanced, chance, f1 = calc_scores(yt, pred)
+        dep_balanced_acc.append(balanced)
+        dep_chance_acc.append(chance)
+        dep_f1_scores.append(f1)
+
+        # Calculating fold confusion matrix
+        dep_cm = metrics.confusion_matrix(yt, pred)
+        dep_normalized_cm = dep_cm.astype('float')/dep_cm.sum(axis=1)[:, np.newaxis]
+
+        dep_cm_dict[foldname] = pd.DataFrame(dep_cm, index=clf.classes_, columns=clf.classes_)
+        dep_norm_cm_dict[foldname] = pd.DataFrame(dep_normalized_cm, index=clf.classes_, columns=clf.classes_)
+
+    # Saving anxiety performance scores
+    anx_f1_array = np.asarray(anx_f1_scores)
+    f1_class_averages = np.mean(anx_f1_array, axis=0)
+    f1_data = np.vstack((anx_f1_array, f1_class_averages))
+
+    balanced_acc_avg = np.mean(anx_balanced_acc)
+    chance_acc_avg = np.mean(anx_chance_acc)
+
+    anx_balanced_acc.append(balanced_acc_avg)
+    anx_chance_acc.append(chance_acc_avg)
+
+    accuracy_data = np.asarray([anx_balanced_acc, anx_chance_acc]).T
+
+    rownames = ['Fold %02d' % (n + 1) for n in range(n_splits)]
+    rownames.append('Average')
+    score_df = pd.DataFrame(data=accuracy_data, index=rownames, columns=['Balanced accuracy', 'Chance accuracy'])
+
+    f1_df = pd.DataFrame(data=np.asarray(f1_data), index=rownames, columns=clf.classes_)
+    scores_dict = {'accuracy scores': score_df,
+                   'f1 scores': f1_df}
+
+    pu.save_xls(scores_dict, join(target_outdir, 'anxiety_performance.xlsx'))
+
+    # Saving performance scores
+    dep_f1_array = np.asarray(dep_f1_scores)
+    f1_class_averages = np.mean(dep_f1_array, axis=0)
+    f1_data = np.vstack((dep_f1_array, f1_class_averages))
+
+    balanced_acc_avg = np.mean(dep_balanced_acc)
+    chance_acc_avg = np.mean(dep_chance_acc)
+
+    dep_balanced_acc.append(balanced_acc_avg)
+    dep_chance_acc.append(chance_acc_avg)
+
+    accuracy_data = np.asarray([dep_balanced_acc, dep_chance_acc]).T
+
+    rownames = ['Fold %02d' % (n+1) for n in range(n_splits)]
+    rownames.append('Average')
+    score_df = pd.DataFrame(data=accuracy_data, index=rownames, columns=['Balanced accuracy', 'Chance accuracy'])
+
+    f1_df = pd.DataFrame(data=np.asarray(f1_data), index=rownames, columns=clf.classes_)
+    scores_dict = {'accuracy scores': score_df,
+                   'f1 scores': f1_df}
+
+    pu.save_xls(scores_dict, join(target_outdir, 'depression_performance.xlsx'))
+
+    # Saving coefficients
+    if bool(classifier_coefficients):
+        pu.save_xls(classifier_coefficients, join(target_outdir, 'coefficients.xlsx'))
+
+    # Saving confusion matrices
+    pu.save_xls(anx_cm_dict, join(target_outdir, 'anxiety_confusion_matrices.xlsx'))
+    pu.save_xls(anx_norm_cm_dict, join(target_outdir, 'anxiety_confusion_matrices_normalized.xlsx'))
+
+    pu.save_xls(dep_cm_dict, join(target_outdir, 'depression_confusion_matrices.xlsx'))
+    pu.save_xls(dep_norm_cm_dict, join(target_outdir, 'depression_confusion_matrices_normalized.xlsx'))
+
+    # Saving classifier object
+    with open(join(target_outdir, 'classifier_object.pkl'), 'wb') as file:
+        pkl.dump(classifier_objects, file)
+
 
 print('%s: Loading data' % pu.ctime())
 behavior_data, conn_data = pu.load_data_full_subjects()
@@ -170,7 +277,7 @@ covariate_data = pd.concat([behavior_data['age'], dummy_coded_categorical], axis
 ml_data = pd.concat([conn_data, covariate_data], axis=1)
 multilabel_models = ['extra_trees', 'knn']
 for model in multilabel_models:
-    output_dir = './../data/%s_multilabel/' % model
+    output_dir = './../data/%s/' % model
     if not isdir(output_dir):
         mkdir(output_dir)
     # 0-7 (normal); 8-10 (borderline); 11-21 (abnormal)
@@ -183,5 +290,5 @@ for model in multilabel_models:
     dep_binned = np.digitize(dep, bins=hads_thresholds, right=True)
 
     multi_target = np.vstack((anx_binned, dep_binned)).T
-    eeg_multilabel_classify(ml_data, multi_target, target_type='hads', model=model, outdir=output_dir)
+    eeg_multilabel_classify(ml_data, multi_target, target_type='hads_multilabel', model=model, outdir=output_dir)
     break
