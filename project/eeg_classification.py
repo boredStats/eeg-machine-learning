@@ -196,6 +196,8 @@ def eeg_classify(eeg_data, target_data, target_type, model, outdir, multi=False)
         elif model is 'knn':
             predicted, clf = knn(x_train_fs, y_train, x_test_fs)
 
+        classifier_objects[foldname] = clf
+
         # Calculating fold performance scores
         balanced, chance, f1 = calc_scores(y_test, predicted)
         balanced_acc.append(balanced)
@@ -240,7 +242,7 @@ def eeg_classify(eeg_data, target_data, target_type, model, outdir, multi=False)
 
     # Saving classifier object
     with open(join(target_outdir, 'classifier_object.pkl'), 'wb') as file:
-        pkl.dump(clf, file)
+        pkl.dump(classifier_objects, file)
 
 
 def convert_tinnitus_data_to_str(tinnitus_data, data_type):
