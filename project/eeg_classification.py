@@ -46,21 +46,6 @@ def extra_trees(x_train, y_train, x_test, cleaned_features):
     return predicted, feature_df, clf
 
 
-def sgd(x_train, y_train, x_test, cleaned_features):
-    clf = linear_model.SGDClassifier(loss="hinge", penalty="l2", max_iter=1000, random_state=seed)
-    clf.fit(x_train, y_train)
-    target_classes = clf.classes_
-    target_classes = [str(c) for c in target_classes]
-
-    predicted = clf.predict(x_test)
-    if len(target_classes) == 2:
-        idx_label = ['coefficients']
-    else:
-        idx_label = target_classes
-    coef_df = pd.DataFrame(clf.coef_, index=idx_label, columns=cleaned_features)
-    return predicted, coef_df, clf
-
-
 def knn(x_train, y_train, x_test):
     clf = neighbors.KNeighborsClassifier()
     clf.fit(x_train, y_train)
@@ -183,10 +168,6 @@ def eeg_classify(eeg_data, target_data, target_type, model, outdir, multi=False)
             predicted, feature_importances, clf = extra_trees(x_train_fs, y_train, x_test_fs, cleaned_features)
             classifier_coefficients[foldname] = feature_importances
 
-        elif model is 'sgd':
-            predicted, coef_df, clf = sgd(x_train_fs, y_train, x_test_fs, cleaned_features)
-            classifier_coefficients[foldname] = coef_df
-
         elif model is 'knn':
             predicted, clf = knn(x_train_fs, y_train, x_test_fs)
 
@@ -280,7 +261,7 @@ def side_classification_drop_asym(ml_data, behavior_data):
     ml_data.drop(index=asym_data.index, inplace=True)
     t_df.drop(index=asym_data.index, inplace=True)
 
-    models = ['svm', 'extra_trees', 'sgd', 'knn']
+    models = ['svm', 'extra_trees', 'knn']
     for model in models:
         output_dir = './../data/%s/' % model
         if not isdir(output_dir):
@@ -298,7 +279,7 @@ def type_classification_drop_mixed(ml_data, behavior_data):
     ml_data.drop(index=type_data.index, inplace=True)
     t_df.drop(index=type_data.index, inplace=True)
 
-    models = ['svm', 'extra_trees', 'sgd', 'knn']
+    models = ['svm', 'extra_trees', 'knn']
     for model in models:
         output_dir = './../data/%s/' % model
         if not isdir(output_dir):
@@ -307,7 +288,7 @@ def type_classification_drop_mixed(ml_data, behavior_data):
 
 
 def classification_main(ml_data, behavior_data):
-    models = ['svm', 'extra_trees', 'sgd', 'knn']
+    models = ['svm', 'extra_trees', 'knn']
     for model in models:
         output_dir = './../data/%s/' % model
         if not isdir(output_dir):
