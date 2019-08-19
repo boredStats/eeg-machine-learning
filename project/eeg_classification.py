@@ -6,7 +6,7 @@ import pickle as pkl
 import proj_utils as pu
 from imblearn.over_sampling import RandomOverSampler
 from imblearn.under_sampling import RandomUnderSampler
-from sklearn import ensemble, feature_selection, model_selection, preprocessing, svm, metrics, linear_model, neighbors
+from sklearn import ensemble, feature_selection, model_selection, preprocessing, svm, metrics, neighbors
 from sklearn.utils.testing import ignore_warnings
 from sklearn.exceptions import ConvergenceWarning
 
@@ -53,50 +53,29 @@ def knn(x_train, y_train, x_test):
     return predicted, clf
 
 
-def resample_multilabel(data, target):
-    """
-    1. Convert an [n_samples, n_variables] array to a [n_samples] vector (One-vs-Rest problem)
-    2. Apply LP transformation, then resample
-    3. ???
-    4. Profit
-    """
-    target = target.astype(int)
+def convert_hads_to_single_label(hads_array):
+    hads_array = hads_array.astype(int)
 
-    def combine_anx_dep_to_str(hads_data):
-        vartypes = ['anxiety', 'depression']
-        combined_classes = []
-        for row in range(hads_data.shape[0]):
-            str_combos = []
-            for col in range(hads_data.shape[1]):
-                val = hads_data[row, col]
-                if val == 0:
-                    str_convert = '%s_normal' % vartypes[col]
-                elif val == 1:
-                    str_convert = '%s_borderline' % vartypes[col]
-                elif val == 2:
-                    str_convert = '%s_abnormal' % vartypes[col]
-                str_combos.append(str_convert)
-            hads_combined = '%s-%s' % (str_combos[0], str_combos[1])
-            combined_classes.append(hads_combined)
-        return combined_classes
-
-    hads_to_string = combine_anx_dep_to_str(target)
-    lb = preprocessing.LabelBinarizer()
-    indicator_matrix = lb.fit_transform(hads_to_string)
-
-    from skmultilearn.problem_transform import LabelPowerset
-    lp = LabelPowerset()
-    resampler = RandomOverSampler(sampling_strategy='not majority', random_state=seed)
-    target_transformed = lp.transform(indicator_matrix)
-
-    data_resampled, target_resampled = resampler.fit_sample(data, target_transformed)
-    target_resampled_binary = lp.inverse_transform(target_resampled)
-    target_resampled_str = lb.inverse_transform(target_resampled_binary)
-    return data_resampled, target_resampled_str, target_resampled_binary
+    vartypes = ['anxiety', 'depression']
+    hads_single_label = []
+    for row in range(hads_array.shape[0]):
+        str_combos = []
+        for col in range(hads_array.shape[1]):
+            val = hads_array[row, col]
+            if val == 0:
+                str_convert = '%s_normal' % vartypes[col]
+            elif val == 1:
+                str_convert = '%s_borderline' % vartypes[col]
+            elif val == 2:
+                str_convert = '%s_abnormal' % vartypes[col]
+            str_combos.append(str_convert)
+        hads_combined = '%s-%s' % (str_combos[0], str_combos[1])
+        hads_single_label.append(hads_combined)
+    return hads_single_label
 
 
 @ignore_warnings(category=ConvergenceWarning)
-def eeg_classify(eeg_data, target_data, target_type, model, outdir, multi=False):
+def eeg_classify(eeg_data, target_data, target_type, model, outdir):
     target_outdir = join(outdir, target_type)
     if not isdir(target_outdir):
         mkdir(target_outdir)
@@ -114,11 +93,8 @@ def eeg_classify(eeg_data, target_data, target_type, model, outdir, multi=False)
     skf = model_selection.StratifiedKFold(n_splits=n_splits, random_state=seed)
 
     # Oversample connectivity data, apply k-fold splitter
-    if multi:  # if LP-transformation has been applied to create a OVR problem
-        x_res, y_res, _ = resample_multilabel(ml_data, target_data)
-    else:
-        resampler = RandomOverSampler(sampling_strategy='not majority', random_state=seed)
-        x_res, y_res = resampler.fit_resample(eeg_data, target_data)
+    resampler = RandomOverSampler(sampling_strategy='not majority', random_state=seed)
+    x_res, y_res = resampler.fit_resample(eeg_data, target_data)
     skf.get_n_splits(x_res, y_res)
 
     fold_count = 0
@@ -294,29 +270,29 @@ def classification_main(ml_data, behavior_data):
         if not isdir(output_dir):
             mkdir(output_dir)
 
-        print('%s: Running classification on tinnitus side' % pu.ctime())
-        # Left, Left>Right, Bil/Holo, Right>Left, Right
-        t = convert_tinnitus_data_to_str(behavior_data['tinnitus_side'].values.astype(float) * 2, 'tinnitus_side')
-        eeg_classify(eeg_data=ml_data, target_data=t, target_type='tinnitus_side', model=model, outdir=output_dir)
-
-        print('%s: Running classification on tinnitus type' % pu.ctime())
-        # PureTone, PureTone+NBN, NBN
-        t = convert_tinnitus_data_to_str(np.add(behavior_data['tinnitus_type'].values.astype(int), 1), 'tinnitus_type')
-        eeg_classify(eeg_data=ml_data, target_data=t, target_type='tinnitus_type', model=model, outdir=output_dir)
-
-        print('%s: Running classification on TQ - high/low' % pu.ctime())
-        target = behavior_data['distress_TQ'].values
-        high_low_thresholds = [0, 46, 84]
-        binned_target = np.digitize(target, bins=high_low_thresholds, right=True)
-        target = ['TQ_high' if t > 1 else 'TQ_low' for t in binned_target]
-        eeg_classify(eeg_data=ml_data, target_data=target, target_type='TQ_high_low', model=model, outdir=output_dir)
-
-        print('%s: Running classification on TQ - grade' % pu.ctime())
-        target = behavior_data['distress_TQ'].values
-        grade_thresholds = [0, 30, 46, 59, 84]
-        binned_target = np.digitize(target, bins=grade_thresholds, right=True)
-        target = ['Grade_%d' % t for t in binned_target]
-        eeg_classify(eeg_data=ml_data, target_data=target, target_type='TQ_grade', model=model, outdir=output_dir)
+        # print('%s: Running classification on tinnitus side' % pu.ctime())
+        # # Left, Left>Right, Bil/Holo, Right>Left, Right
+        # t = convert_tinnitus_data_to_str(behavior_data['tinnitus_side'].values.astype(float) * 2, 'tinnitus_side')
+        # eeg_classify(eeg_data=ml_data, target_data=t, target_type='tinnitus_side', model=model, outdir=output_dir)
+        #
+        # print('%s: Running classification on tinnitus type' % pu.ctime())
+        # # PureTone, PureTone+NBN, NBN
+        # t = convert_tinnitus_data_to_str(np.add(behavior_data['tinnitus_type'].values.astype(int), 1), 'tinnitus_type')
+        # eeg_classify(eeg_data=ml_data, target_data=t, target_type='tinnitus_type', model=model, outdir=output_dir)
+        #
+        # print('%s: Running classification on TQ - high/low' % pu.ctime())
+        # target = behavior_data['distress_TQ'].values
+        # high_low_thresholds = [0, 46, 84]
+        # binned_target = np.digitize(target, bins=high_low_thresholds, right=True)
+        # target = ['TQ_high' if t > 1 else 'TQ_low' for t in binned_target]
+        # eeg_classify(eeg_data=ml_data, target_data=target, target_type='TQ_high_low', model=model, outdir=output_dir)
+        #
+        # print('%s: Running classification on TQ - grade' % pu.ctime())
+        # target = behavior_data['distress_TQ'].values
+        # grade_thresholds = [0, 30, 46, 59, 84]
+        # binned_target = np.digitize(target, bins=grade_thresholds, right=True)
+        # target = ['Grade_%d' % t for t in binned_target]
+        # eeg_classify(eeg_data=ml_data, target_data=target, target_type='TQ_grade', model=model, outdir=output_dir)
 
         # 0-7 (normal); 8-10 (borderline); 11-21 (abnormal)
         hads_thresholds = [8, 11, 21]
@@ -325,8 +301,9 @@ def classification_main(ml_data, behavior_data):
         anx_binned = np.digitize(anx, bins=hads_thresholds, right=True)  # right=True: bin < x <= bin if ascending
         dep = behavior_data['depression_score'].values.astype(float)
         dep_binned = np.digitize(dep, bins=hads_thresholds, right=True)
-        multi_target = np.vstack((anx_binned, dep_binned)).T
-        eeg_classify(ml_data, multi_target, target_type='hads_OVR', model=model, outdir=output_dir, multi=True)
+        multi_hads = np.vstack((anx_binned, dep_binned)).T
+        single_hads = convert_hads_to_single_label(multi_hads)
+        eeg_classify(eeg_data=ml_data, target_data=single_hads, target_type='hads_OVR', model=model, outdir=output_dir)
 
     print('%s: Finished' % pu.ctime())
 
@@ -343,7 +320,7 @@ if __name__ == "__main__":
 
     ml_data = pd.concat([conn_data, covariate_data], axis=1)
 
-    # classification_main(ml_data, behavior_data)
+    classification_main(ml_data, behavior_data)
 
-    type_classification_drop_mixed(ml_data, behavior_data)
+    # type_classification_drop_mixed(ml_data, behavior_data)
     # side_classification_drop_asym(ml_data, behavior_data)
