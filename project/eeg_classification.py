@@ -5,20 +5,13 @@ import pandas as pd
 import pickle as pkl
 import proj_utils as pu
 from imblearn.over_sampling import RandomOverSampler
+from imblearn.under_sampling import RandomUnderSampler
 from sklearn import ensemble, feature_selection, model_selection, preprocessing, svm, metrics, linear_model, neighbors
 from sklearn.utils.testing import ignore_warnings
 from sklearn.exceptions import ConvergenceWarning
 
 
 seed = 13
-
-
-def save_xls(dict_df, path):
-    # Save a dictionary of dataframes to an excel file, with each dataframe as a seperate page
-    writer = pd.ExcelWriter(path)
-    for key in list(dict_df):
-        dict_df[key].to_excel(writer, '%s' % key)
-    writer.save()
 
 
 def calc_scores(y_test, predicted):
@@ -113,7 +106,8 @@ def resample_multilabel(data, target):
 
     data_resampled, target_resampled = resampler.fit_sample(data, target_transformed)
     target_resampled_binary = lp.inverse_transform(target_resampled)
-    return data_resampled, target_resampled, target_resampled_binary
+    target_resampled_str = lb.inverse_transform(target_resampled_binary)
+    return data_resampled, target_resampled_str, target_resampled_binary
 
 
 @ignore_warnings(category=ConvergenceWarning)
@@ -232,13 +226,13 @@ def eeg_classify(eeg_data, target_data, target_type, model, outdir, multi=False)
     scores_dict = {'accuracy scores': score_df,
                    'f1 scores': f1_df}
 
-    save_xls(scores_dict, join(target_outdir, 'performance.xlsx'))
+    pu.save_xls(scores_dict, join(target_outdir, 'performance.xlsx'))
 
     # Saving coefficients
     if bool(classifier_coefficients):
-        save_xls(classifier_coefficients, join(target_outdir, 'coefficients.xlsx'))
-    save_xls(cm_dict, join(target_outdir, 'confusion_matrices.xlsx'))
-    save_xls(norm_cm_dict, join(target_outdir, 'confusion_matrices_normalized.xlsx'))
+        pu.save_xls(classifier_coefficients, join(target_outdir, 'coefficients.xlsx'))
+    pu.save_xls(cm_dict, join(target_outdir, 'confusion_matrices.xlsx'))
+    pu.save_xls(norm_cm_dict, join(target_outdir, 'confusion_matrices_normalized.xlsx'))
 
     # Saving classifier object
     with open(join(target_outdir, 'classifier_object.pkl'), 'wb') as file:
@@ -274,23 +268,46 @@ def convert_tinnitus_data_to_str(tinnitus_data, data_type):
     return str_data
 
 
-if __name__ == "__main__":
+def side_classification_drop_asym(ml_data, behavior_data):
+    print('%s: Running classification on tinnitus side, dropping asymmetrical subjects' % pu.ctime())
+    t = convert_tinnitus_data_to_str(behavior_data['tinnitus_side'].values.astype(float) * 2, 'tinnitus_side')
+    t_df = pd.DataFrame(t, index=ml_data.index)
+    asym_indices = []
+    for asym in ['Right>Left', 'Left>Right']:
+        asym_indices.extend([i for i, s in enumerate(t) if asym == s])
+
+    asym_data = ml_data.iloc[asym_indices]
+    ml_data.drop(index=asym_data.index, inplace=True)
+    t_df.drop(index=asym_data.index, inplace=True)
+
     models = ['svm', 'extra_trees', 'sgd', 'knn']
-    model = 'extra_trees'
-    output_dir = './../data/%s/' % model
-    if not isdir(output_dir):
-        mkdir(output_dir)
+    for model in models:
+        output_dir = './../data/%s/' % model
+        if not isdir(output_dir):
+            mkdir(output_dir)
+        eeg_classify(ml_data, np.ravel(t_df.values), 'tinnitus_side_no_asym', model, output_dir)
 
-    print('%s: Loading data' % pu.ctime())
-    behavior_data, conn_data = pu.load_data_full_subjects()
-    conn_data.astype(float)
 
-    categorical_variables = ['smoking', 'deanxit_antidepressants', 'rivotril_antianxiety', 'sex']
-    categorical_data = behavior_data[categorical_variables]
-    dummy_coded_categorical = pu.dummy_code_binary(categorical_data)
-    covariate_data = pd.concat([behavior_data['age'], dummy_coded_categorical], axis=1)
+def type_classification_drop_mixed(ml_data, behavior_data):
+    print('%s: Running classification on tinnitus type, dropping mixed type subjects' % pu.ctime())
+    t = convert_tinnitus_data_to_str(np.add(behavior_data['tinnitus_type'].values.astype(int), 1), 'tinnitus_type')
+    t_df = pd.DataFrame(t, index=ml_data.index)
+    mixed_indices = [i for i, s in enumerate(t) if s == 'PT_and_NBN']
 
-    ml_data = pd.concat([conn_data, covariate_data], axis=1)
+    type_data = ml_data.iloc[mixed_indices]
+    ml_data.drop(index=type_data.index, inplace=True)
+    t_df.drop(index=type_data.index, inplace=True)
+
+    models = ['svm', 'extra_trees', 'sgd', 'knn']
+    for model in models:
+        output_dir = './../data/%s/' % model
+        if not isdir(output_dir):
+            mkdir(output_dir)
+        eeg_classify(ml_data, np.ravel(t_df.values), 'tinnitus_type_no_mixed', model, output_dir)
+
+
+def classification_main(ml_data, behavior_data):
+    models = ['svm', 'extra_trees', 'sgd', 'knn']
     for model in models:
         output_dir = './../data/%s/' % model
         if not isdir(output_dir):
@@ -320,5 +337,32 @@ if __name__ == "__main__":
         target = ['Grade_%d' % t for t in binned_target]
         eeg_classify(eeg_data=ml_data, target_data=target, target_type='TQ_grade', model=model, outdir=output_dir)
 
+        # 0-7 (normal); 8-10 (borderline); 11-21 (abnormal)
+        hads_thresholds = [8, 11, 21]
+        print('%s: Running OVR classification on HADS' % pu.ctime())
+        anx = behavior_data['anxiety_score'].values.astype(float)
+        anx_binned = np.digitize(anx, bins=hads_thresholds, right=True)  # right=True: bin < x <= bin if ascending
+        dep = behavior_data['depression_score'].values.astype(float)
+        dep_binned = np.digitize(dep, bins=hads_thresholds, right=True)
+        multi_target = np.vstack((anx_binned, dep_binned)).T
+        eeg_classify(ml_data, multi_target, target_type='hads_OVR', model=model, outdir=output_dir, multi=True)
 
     print('%s: Finished' % pu.ctime())
+
+
+if __name__ == "__main__":
+    print('%s: Loading data' % pu.ctime())
+    behavior_data, conn_data = pu.load_data_full_subjects()
+    conn_data.astype(float)
+
+    categorical_variables = ['smoking', 'deanxit_antidepressants', 'rivotril_antianxiety', 'sex']
+    categorical_data = behavior_data[categorical_variables]
+    dummy_coded_categorical = pu.dummy_code_binary(categorical_data)
+    covariate_data = pd.concat([behavior_data['age'], dummy_coded_categorical], axis=1)
+
+    ml_data = pd.concat([conn_data, covariate_data], axis=1)
+
+    # classification_main(ml_data, behavior_data)
+
+    type_classification_drop_mixed(ml_data, behavior_data)
+    # side_classification_drop_asym(ml_data, behavior_data)
