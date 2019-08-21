@@ -95,6 +95,56 @@ def convert_hads_to_single_label(hads_array):
     return hads_single_label
 
 
+def feature_selection_with_covariates(x_train, x_test, y_train, continuous_indices, categorical_indices, feature_names):
+    # Split data for continuous, categorical preprocessing
+    x_train_cont, x_test_cont = x_train[:, continuous_indices], x_test[:, continuous_indices]
+    x_train_cat, x_test_cat = x_train[:, categorical_indices], x_test[:, categorical_indices]
+
+    # Standardization for continuous data
+    preproc = preprocessing.StandardScaler().fit(x_train_cont)
+    x_train_z = preproc.transform(x_train_cont)
+    x_test_z = preproc.transform(x_test_cont)
+
+    # Variance threshold for categorical data
+    varthresh = feature_selection.VarianceThreshold(threshold=0).fit(x_train_cat)
+    x_train_v = varthresh.transform(x_train_cat)
+    x_test_v = varthresh.transform(x_test_cat)
+
+    x_train_data = np.hstack((x_train_z, x_train_v))
+    x_test_data = np.hstack((x_test_z, x_test_v))
+
+    # Feature selection with extra trees
+    extra_tree_fs = ensemble.ExtraTreesClassifier(random_state=seed)
+    feature_model = feature_selection.SelectFromModel(extra_tree_fs, threshold="2*mean")
+
+    # Transform train and test data with feature selection model
+    x_train_feature_selected = feature_model.fit_transform(x_train_data, y_train)
+    x_test_feature_selected = feature_model.transform(x_test_data)
+    feature_indices = feature_model.get_support(indices=True)
+    cleaned_features = [feature_names[i] for i in feature_indices]
+
+    return x_train_feature_selected, x_test_feature_selected, cleaned_features
+
+
+def feature_selection_without_covariates(x_train, x_test, y_train, feature_names):
+    # Standardization for continuous data
+    preproc = preprocessing.StandardScaler().fit(x_train)
+    x_train_z = preproc.transform(x_train)
+    x_test_z = preproc.transform(x_test)
+
+    # Feature selection with extra trees
+    extra_tree_fs = ensemble.ExtraTreesClassifier(random_state=seed)
+    feature_model = feature_selection.SelectFromModel(extra_tree_fs, threshold="2*mean")
+
+    # Transform train and test data with feature selection model
+    x_train_feature_selected = feature_model.fit_transform(x_train_z, y_train)
+    x_test_feature_selected = feature_model.transform(x_test_z)
+    feature_indices = feature_model.get_support(indices=True)
+    cleaned_features = [feature_names[i] for i in feature_indices]
+
+    return x_train_feature_selected, x_test_feature_selected, cleaned_features
+
+
 @ignore_warnings(category=ConvergenceWarning)
 def eeg_classify(eeg_data, target_data, target_type, model, outdir, resample=None):
     target_outdir = join(outdir, target_type)
@@ -102,14 +152,7 @@ def eeg_classify(eeg_data, target_data, target_type, model, outdir, resample=Non
         mkdir(target_outdir)
 
     feature_names = list(eeg_data)
-    
-    continuous_features = [f for f in feature_names if 'categorical' not in f]
-    continuous_indices = [eeg_data.columns.get_loc(cont) for cont in continuous_features]
 
-    categorical_features = [f for f in feature_names if 'categorical' in f]
-    categorical_indices = [eeg_data.columns.get_loc(cat) for cat in categorical_features]
-
-    # Resample data
     if resample is None:
         x_res, y_res = eeg_data.values, np.asarray(target_data)
         model_outdir = join(target_outdir, '%s_no_resample' % model)
@@ -142,32 +185,18 @@ def eeg_classify(eeg_data, target_data, target_type, model, outdir, resample=Non
         x_train, x_test = x_res[train_idx], x_res[test_idx]
         y_train, y_test = y_res[train_idx], y_res[test_idx]
 
-        # Split data for continuous, categorical preprocessing
-        x_train_cont, x_test_cont = x_train[:, continuous_indices], x_test[:, continuous_indices]
-        x_train_cat, x_test_cat = x_train[:, categorical_indices], x_test[:, categorical_indices]
+        if "categorical_sex_male" in feature_names:
+            continuous_features = [f for f in feature_names if 'categorical' not in f]
+            continuous_indices = [eeg_data.columns.get_loc(cont) for cont in continuous_features]
 
-        # Standardization for continuous data
-        preproc = preprocessing.StandardScaler().fit(x_train_cont)
-        x_train_z = preproc.transform(x_train_cont)
-        x_test_z = preproc.transform(x_test_cont)
+            categorical_features = [f for f in feature_names if 'categorical' in f]
+            categorical_indices = [eeg_data.columns.get_loc(cat) for cat in categorical_features]
 
-        # Variance threshold for categorical data
-        varthresh = feature_selection.VarianceThreshold(threshold=0).fit(x_train_cat)
-        x_train_v = varthresh.transform(x_train_cat)
-        x_test_v = varthresh.transform(x_test_cat)
-
-        x_train_data = np.hstack((x_train_z, x_train_v))
-        x_test_data = np.hstack((x_test_z, x_test_v))
-
-        # Feature selection with extra trees
-        extra_tree_fs = ensemble.ExtraTreesClassifier(random_state=seed)
-        feature_model = feature_selection.SelectFromModel(extra_tree_fs, threshold="2*mean")
-
-        # Transform train and test data with feature selection model
-        x_train_fs = feature_model.fit_transform(x_train_data, y_train)
-        x_test_fs = feature_model.transform(x_test_data)
-        feature_indices = feature_model.get_support(indices=True)
-        cleaned_features = [feature_names[i] for i in feature_indices]
+            x_train_fs, x_test_fs, cleaned_features = feature_selection_with_covariates(
+                x_train, x_test, y_train, continuous_indices, categorical_indices, feature_names)
+        else:
+            x_train_fs, x_test_fs, cleaned_features = feature_selection_without_covariates(
+                x_train, x_test, y_train, feature_names)
 
         if model is 'svm':
             predicted, coef_df, clf = svmc(x_train_fs, y_train, x_test_fs, cleaned_features)
@@ -295,7 +324,7 @@ if __name__ == "__main__":
 
     ml_data = pd.concat([conn_data, covariate_data], axis=1)
 
-    models = ['extra_trees']
+    models = None  # ['extra_trees']
     classification_main(ml_data, behavior_data, output_dir, models=models)
 
     type_classification_drop_mixed(ml_data, behavior_data, output_dir, models=models)
