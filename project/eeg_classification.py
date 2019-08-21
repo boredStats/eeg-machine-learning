@@ -152,21 +152,27 @@ def eeg_classify(eeg_data, target_data, target_type, model, outdir, resample=Non
         mkdir(target_outdir)
 
     feature_names = list(eeg_data)
+    if "categorical_sex_male" in feature_names:
+        cv_check = 'with_covariates'
+    else:
+        cv_check = 'without_covariates'
 
     if resample is None:
         x_res, y_res = eeg_data.values, np.asarray(target_data)
-        model_outdir = join(target_outdir, '%s_no_resample' % model)
+        rs_check = 'no_resample'
     elif resample is 'over':
         resampler = RandomOverSampler(sampling_strategy='not majority', random_state=seed)
         x_res, y_res = resampler.fit_resample(eeg_data, target_data)
-        model_outdir = join(target_outdir, '%s_oversampled' % model)
+        rs_check = 'oversampled'
     elif resample is 'under':
         resampler = RandomUnderSampler(sampling_strategy='not minority', random_state=seed)
         x_res, y_res = resampler.fit_resample(eeg_data, target_data)
-        model_outdir = join(target_outdir, '%s_undersampled' % model)
+        rs_check = 'undersampled'
 
+    model_outdir = join(target_outdir, '%s_%s_%s' % (model, cv_check, rs_check))
     if not isdir(model_outdir):
         mkdir(model_outdir)
+    print('%s: Running classification - %s %s %s %s' % (pu.ctime(), target_type, model, cv_check, rs_check))
 
     # Apply k-fold splitter
     n_splits = 10
@@ -307,7 +313,6 @@ def classification_main(ml_data, behavior_data, output_dir, models=None):
         target_data = targets[target]
         for model in models:
             for res in resample_methods:
-                print('%s: Running classification - %s %s %s' % (pu.ctime(), target, model, res))
                 eeg_classify(ml_data, target_data, target_type=target, model=model, outdir=output_dir, resample=res)
 
 
