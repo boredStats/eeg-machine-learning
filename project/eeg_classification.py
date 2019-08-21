@@ -75,10 +75,13 @@ def convert_hads_to_single_label(hads_array):
 
 
 @ignore_warnings(category=ConvergenceWarning)
-def eeg_classify(eeg_data, target_data, target_type, model, outdir):
+def eeg_classify(eeg_data, target_data, target_type, clf_model, outdir):
     target_outdir = join(outdir, target_type)
     if not isdir(target_outdir):
         mkdir(target_outdir)
+    model_outdir = join(target_outdir, clf_model)
+    if not isdir(model_outdir):
+        mkdir(model_outdir)
 
     feature_names = list(eeg_data)
     
@@ -136,15 +139,15 @@ def eeg_classify(eeg_data, target_data, target_type, model, outdir):
         feature_indices = feature_model.get_support(indices=True)
         cleaned_features = [feature_names[i] for i in feature_indices]
 
-        if model is 'svm':
+        if clf_model is 'svm':
             predicted, coef_df, clf = svmc(x_train_fs, y_train, x_test_fs, cleaned_features)
             classifier_coefficients[foldname] = coef_df
 
-        elif model is 'extra_trees':
+        elif clf_model is 'extra_trees':
             predicted, feature_importances, clf = extra_trees(x_train_fs, y_train, x_test_fs, cleaned_features)
             classifier_coefficients[foldname] = feature_importances
 
-        elif model is 'knn':
+        elif clf_model is 'knn':
             predicted, clf = knn(x_train_fs, y_train, x_test_fs)
 
         classifier_objects[foldname] = clf
@@ -183,16 +186,16 @@ def eeg_classify(eeg_data, target_data, target_type, model, outdir):
     scores_dict = {'accuracy scores': score_df,
                    'f1 scores': f1_df}
 
-    pu.save_xls(scores_dict, join(target_outdir, 'performance.xlsx'))
+    pu.save_xls(scores_dict, join(model_outdir, 'performance.xlsx'))
 
     # Saving coefficients
     if bool(classifier_coefficients):
-        pu.save_xls(classifier_coefficients, join(target_outdir, 'coefficients.xlsx'))
-    pu.save_xls(cm_dict, join(target_outdir, 'confusion_matrices.xlsx'))
-    pu.save_xls(norm_cm_dict, join(target_outdir, 'confusion_matrices_normalized.xlsx'))
+        pu.save_xls(classifier_coefficients, join(model_outdir, 'coefficients.xlsx'))
+    pu.save_xls(cm_dict, join(model_outdir, 'confusion_matrices.xlsx'))
+    pu.save_xls(norm_cm_dict, join(model_outdir, 'confusion_matrices_normalized.xlsx'))
 
     # Saving classifier object
-    with open(join(target_outdir, 'classifier_object.pkl'), 'wb') as file:
+    with open(join(model_outdir, 'classifier_object.pkl'), 'wb') as file:
         pkl.dump(classifier_objects, file)
 
 
@@ -238,10 +241,8 @@ def side_classification_drop_asym(ml_data, behavior_data):
     t_df.drop(index=asym_data.index, inplace=True)
 
     models = ['svm', 'extra_trees', 'knn']
+    output_dir = './../data/'
     for model in models:
-        output_dir = './../data/%s/' % model
-        if not isdir(output_dir):
-            mkdir(output_dir)
         eeg_classify(ml_data, np.ravel(t_df.values), 'tinnitus_side_no_asym', model, output_dir)
 
 
@@ -256,43 +257,38 @@ def type_classification_drop_mixed(ml_data, behavior_data):
     t_df.drop(index=type_data.index, inplace=True)
 
     models = ['svm', 'extra_trees', 'knn']
+    output_dir = './../data/'
     for model in models:
-        output_dir = './../data/%s/' % model
-        if not isdir(output_dir):
-            mkdir(output_dir)
         eeg_classify(ml_data, np.ravel(t_df.values), 'tinnitus_type_no_mixed', model, output_dir)
 
 
 def classification_main(ml_data, behavior_data):
     models = ['svm', 'extra_trees', 'knn']
+    output_dir = './../data/'
     for model in models:
-        output_dir = './../data/%s/' % model
-        if not isdir(output_dir):
-            mkdir(output_dir)
+        print('%s: Running classification on tinnitus side' % pu.ctime())
+        # Left, Left>Right, Bil/Holo, Right>Left, Right
+        t = convert_tinnitus_data_to_str(behavior_data['tinnitus_side'].values.astype(float) * 2, 'tinnitus_side')
+        eeg_classify(eeg_data=ml_data, target_data=t, target_type='tinnitus_side', model=model, outdir=output_dir)
 
-        # print('%s: Running classification on tinnitus side' % pu.ctime())
-        # # Left, Left>Right, Bil/Holo, Right>Left, Right
-        # t = convert_tinnitus_data_to_str(behavior_data['tinnitus_side'].values.astype(float) * 2, 'tinnitus_side')
-        # eeg_classify(eeg_data=ml_data, target_data=t, target_type='tinnitus_side', model=model, outdir=output_dir)
-        #
-        # print('%s: Running classification on tinnitus type' % pu.ctime())
-        # # PureTone, PureTone+NBN, NBN
-        # t = convert_tinnitus_data_to_str(np.add(behavior_data['tinnitus_type'].values.astype(int), 1), 'tinnitus_type')
-        # eeg_classify(eeg_data=ml_data, target_data=t, target_type='tinnitus_type', model=model, outdir=output_dir)
-        #
-        # print('%s: Running classification on TQ - high/low' % pu.ctime())
-        # target = behavior_data['distress_TQ'].values
-        # high_low_thresholds = [0, 46, 84]
-        # binned_target = np.digitize(target, bins=high_low_thresholds, right=True)
-        # target = ['TQ_high' if t > 1 else 'TQ_low' for t in binned_target]
-        # eeg_classify(eeg_data=ml_data, target_data=target, target_type='TQ_high_low', model=model, outdir=output_dir)
-        #
-        # print('%s: Running classification on TQ - grade' % pu.ctime())
-        # target = behavior_data['distress_TQ'].values
-        # grade_thresholds = [0, 30, 46, 59, 84]
-        # binned_target = np.digitize(target, bins=grade_thresholds, right=True)
-        # target = ['Grade_%d' % t for t in binned_target]
-        # eeg_classify(eeg_data=ml_data, target_data=target, target_type='TQ_grade', model=model, outdir=output_dir)
+        print('%s: Running classification on tinnitus type' % pu.ctime())
+        # PureTone, PureTone+NBN, NBN
+        t = convert_tinnitus_data_to_str(np.add(behavior_data['tinnitus_type'].values.astype(int), 1), 'tinnitus_type')
+        eeg_classify(eeg_data=ml_data, target_data=t, target_type='tinnitus_type', model=model, outdir=output_dir)
+
+        print('%s: Running classification on TQ - high/low' % pu.ctime())
+        target = behavior_data['distress_TQ'].values
+        high_low_thresholds = [0, 46, 84]
+        binned_target = np.digitize(target, bins=high_low_thresholds, right=True)
+        target = ['TQ_high' if t > 1 else 'TQ_low' for t in binned_target]
+        eeg_classify(eeg_data=ml_data, target_data=target, target_type='TQ_high_low', model=model, outdir=output_dir)
+
+        print('%s: Running classification on TQ - grade' % pu.ctime())
+        target = behavior_data['distress_TQ'].values
+        grade_thresholds = [0, 30, 46, 59, 84]
+        binned_target = np.digitize(target, bins=grade_thresholds, right=True)
+        target = ['Grade_%d' % t for t in binned_target]
+        eeg_classify(eeg_data=ml_data, target_data=target, target_type='TQ_grade', model=model, outdir=output_dir)
 
         # 0-7 (normal); 8-10 (borderline); 11-21 (abnormal)
         hads_thresholds = [8, 11, 21]
@@ -322,5 +318,5 @@ if __name__ == "__main__":
 
     classification_main(ml_data, behavior_data)
 
-    # type_classification_drop_mixed(ml_data, behavior_data)
-    # side_classification_drop_asym(ml_data, behavior_data)
+    type_classification_drop_mixed(ml_data, behavior_data)
+    side_classification_drop_asym(ml_data, behavior_data)
