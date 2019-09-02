@@ -171,6 +171,35 @@ def dummy_code_binary(categorical_series):
     return dummy_series.rename(columns=dict(zip(old_names, ['categorical_%s' % d for d in old_names])))
 
 
+def convert_tin_to_str(tinnitus_data, data_type):
+    str_data = []
+    if data_type is 'tinnitus_side':
+        for t in tinnitus_data:
+            if t == -1:
+                str_data.append('Left')
+            elif t == -0.5:
+                str_data.append('Left>Right')
+            elif t == 0.0:
+                str_data.append('Bilateral')
+            elif t == 0.5:
+                str_data.append('Right>Left')
+            elif t == 1.0:
+                str_data.append('Right')
+        if len(str_data) != len(tinnitus_data):
+            raise ValueError('Side data not parsed correctly')
+    elif data_type is 'tinnitus_type':
+        for t in tinnitus_data:
+            if t == -1.0:
+                str_data.   append('PT')
+            elif t == 0.0:
+                str_data.append('PT_and_NBN')
+            elif t == 1.0:
+                str_data.append('NBN')
+        if len(str_data) != len(tinnitus_data):
+            raise ValueError('Type data not parsed correctly')
+    return str_data
+
+
 def save_xls(dict_df, path):
     # Save a dictionary of dataframes to an excel file, with each dataframe as a seperate page
     writer = pd.ExcelWriter(path)
