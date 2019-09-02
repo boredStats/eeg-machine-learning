@@ -1,6 +1,7 @@
 from os.path import join, isdir
 from os import mkdir, listdir
 from itertools import repeat
+from copy import deepcopy
 import numpy as np
 import pandas as pd
 import seaborn as sns
@@ -152,9 +153,52 @@ def replot_confusion_matrices():
             plot_confusion_matrix(avg_cm, ordered_strings=or_str, new_strings=new_str, norm=True, fname=fname)
 
 
+def plot_extra_trees_features():
+    models = ['svm', 'extra_trees', 'sgd', 'knn']
+    variables = ['tinnitus_side', 'tinnitus_type', 'TQ_grade', 'TQ_high_low']
+
+    conn_data = pu.load_connectivity_data()
+    conn_variables = list(conn_data)
+    band_list, roi_list = [], []
+    for c in conn_variables:
+        band = c.split('_')[0]
+        roi_1 = c.split('_')[1]
+        roi_2 = c.split('_')[2]
+        band_list.append(band)
+        roi_list.append(roi_1)
+        roi_list.append(roi_2)
+
+    bands = pd.unique(band_list)
+    rois = pd.unique(roi_list)
+
+    conn_matrix = pd.DataFrame(index=rois, columns=rois)
+    band_matrices_master = {}
+    for band in bands:
+        band_matrices_master[band] = conn_matrix
+
+    for tin_variable in variables:
+        output_dir = './../data/%s/' % tin_variable
+        for model in listdir(output_dir):
+            tin_dir = join(output_dir, model)
+            xls = pd.ExcelFile(join(tin_dir, 'coefficients.xlsx'))
+            for sheet in xls.sheet_names:
+                band_matrices = deepcopy(band_matrices_master)
+                feature_df = pd.read_excel(xls, sheet_name=sheet, index_col=0)
+                for feat in list(feature_df):
+                    feat_str = feat.split('_')
+                    if any([True for b in bands if b in feat_str]):  # check if feature is connectivity data
+                        feat_band, r1, r2 = feat_str[0], feat_str[1], feat_str[2]
+                        input_matrix = band_matrices[feat_band]
+                        input_matrix.loc[r1][r2] = feature_df[feat].values[0]
+
+
+
+
+
 if __name__ == "__main__":
     models = ['svm', 'extra_trees', 'sgd', 'knn']
     variables = ['tinnitus_side', 'tinnitus_type', 'TQ_grade', 'TQ_high_low']
     # boxplot_testing()
     # conf_mat_testing(fname='test_confusion_matrix.png')
-    replot_confusion_matrices()
+    # replot_confusion_matrices()
+    plot_extra_trees_features()
