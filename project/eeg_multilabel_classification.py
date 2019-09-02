@@ -288,7 +288,7 @@ for model in multilabel_models:
         mkdir(output_dir)
     # 0-7 (normal); 8-10 (borderline); 11-21 (abnormal)
     hads_thresholds = [8, 11, 21]
-    print('%s: Running OVR classification on HADS' % pu.ctime())
+    print('%s: Running multilabel classification on HADS' % pu.ctime())
     anx = behavior_data['anxiety_score'].values.astype(float)
     anx_binned = np.digitize(anx, bins=hads_thresholds, right=True)  # right=True: bin < x <= bin if ascending
 

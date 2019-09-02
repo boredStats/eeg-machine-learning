@@ -1,9 +1,10 @@
-from os.path import isdir, join
-from os import mkdir
 import numpy as np
 import pandas as pd
 import pickle as pkl
 import proj_utils as pu
+from os.path import isdir, join
+from os import mkdir
+from copy import deepcopy
 from imblearn.over_sampling import RandomOverSampler
 from imblearn.under_sampling import RandomUnderSampler
 from sklearn import ensemble, feature_selection, model_selection, preprocessing, svm, metrics, neighbors
@@ -249,42 +250,49 @@ def eeg_classify(eeg_data, target_data, target_type, model, outdir, resample=Non
 
 
 def side_classification_drop_asym(ml_data, behavior_data, output_dir, models=None):
-    if models is None:
-        models = ['svm', 'extra_trees', 'knn']
     print('%s: Running classification on tinnitus side, dropping asymmetrical subjects' % pu.ctime())
+    ml_copy = deepcopy(ml_data)
+    if models is None:
+        models = ['extra_trees']
+    resample_methods = [None, 'over', 'under']
     t = pu.convert_tin_to_str(behavior_data['tinnitus_side'].values.astype(float), 'tinnitus_side')
-    t_df = pd.DataFrame(t, index=ml_data.index)
+    t_df = pd.DataFrame(t, index=ml_copy.index)
     asym_indices = []
     for asym in ['Right>Left', 'Left>Right']:
         asym_indices.extend([i for i, s in enumerate(t) if asym == s])
 
-    asym_data = ml_data.iloc[asym_indices]
-    ml_data.drop(index=asym_data.index, inplace=True)
+    asym_data = ml_copy.iloc[asym_indices]
+    ml_copy.drop(index=asym_data.index, inplace=True)
     t_df.drop(index=asym_data.index, inplace=True)
+    target_cleaned = np.ravel(t_df.values)
 
     for model in models:
-        eeg_classify(ml_data, np.ravel(t_df.values), 'tinnitus_side_no_asym', model, output_dir)
+        for res in resample_methods:
+            eeg_classify(ml_copy, target_cleaned, 'tinnitus_side_no_asym', model, output_dir, resample=res)
 
 
 def type_classification_drop_mixed(ml_data, behavior_data, output_dir, models=None):
-    if models is None:
-        models = ['svm', 'extra_trees', 'knn']
     print('%s: Running classification on tinnitus type, dropping mixed type subjects' % pu.ctime())
+    ml_copy = deepcopy(ml_data)
+    if models is None:
+        models = ['extra_trees']
+    resample_methods = [None, 'over', 'under']
     t = pu.convert_tin_to_str(behavior_data['tinnitus_type'].values.astype(float), 'tinnitus_type')
-    t_df = pd.DataFrame(t, index=ml_data.index)
+    t_df = pd.DataFrame(t, index=ml_copy.index)
     mixed_indices = [i for i, s in enumerate(t) if s == 'PT_and_NBN']
 
-    type_data = ml_data.iloc[mixed_indices]
-    ml_data.drop(index=type_data.index, inplace=True)
+    type_data = ml_copy.iloc[mixed_indices]
+    ml_copy.drop(index=type_data.index, inplace=True)
     t_df.drop(index=type_data.index, inplace=True)
-
+    target_cleaned = np.ravel(t_df.values)
     for model in models:
-        eeg_classify(ml_data, np.ravel(t_df.values), 'tinnitus_type_no_mixed', model, output_dir)
+        for res in resample_methods:
+            eeg_classify(ml_copy, target_cleaned, 'tinnitus_type_no_mixed', model, output_dir, resample=res)
 
 
 def classification_main(ml_data, behavior_data, output_dir, models=None):
     if models is None:
-        models = ['svm', 'extra_trees', 'knn']
+        models = ['extra_trees']
     resample_methods = [None, 'over', 'under']
 
     targets = {}
@@ -329,10 +337,9 @@ if __name__ == "__main__":
 
     ml_data = pd.concat([conn_data, covariate_data], axis=1)
 
-    models = None  # ['extra_trees']
-    classification_main(ml_data, behavior_data, output_dir, models=models)
-
-    type_classification_drop_mixed(ml_data, behavior_data, output_dir, models=models)
+    models = ['svm', 'extra_trees', 'knn']
+    # classification_main(ml_data, behavior_data, output_dir, models=models)
     side_classification_drop_asym(ml_data, behavior_data, output_dir, models=models)
+    type_classification_drop_mixed(ml_data, behavior_data, output_dir, models=models)
 
     print('%s: Finished' % pu.ctime())
