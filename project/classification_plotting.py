@@ -1,5 +1,5 @@
 from os.path import join, isdir
-from os import mkdir
+from os import mkdir, listdir
 from itertools import repeat
 import numpy as np
 import pandas as pd
@@ -128,37 +128,24 @@ def replot_confusion_matrices():
     models = ['svm', 'extra_trees', 'sgd', 'knn']
     variables = ['tinnitus_side', 'tinnitus_type', 'TQ_grade', 'TQ_high_low']
 
-    for model in models:
-        output_dir = './../data/%s/' % model
-        for tin_variable in variables:
-            if 'side' in tin_variable:
-                or_str = ['Left', 'Left>Right', 'Bilateral', 'Right>Left', 'Right']
-                new_str = ['L', 'L>R', 'L=R', 'R>L', 'R']
-            elif 'type' in tin_variable:
-                or_str = ['NBN', 'PT_and_NBN', 'PT']
-                new_str = ['NBN', 'PT+NBN', 'PT']
-            else:
-                or_str, new_str = None, None
+    for tin_variable in variables:
+        if 'side' in tin_variable:
+            or_str = ['Left', 'Left>Right', 'Bilateral', 'Right>Left', 'Right']
+            new_str = ['L', 'L>R', 'L=R', 'R>L', 'R']
+        elif 'type' in tin_variable:
+            or_str = ['NBN', 'PT_and_NBN', 'PT']
+            new_str = ['NBN', 'PT+NBN', 'PT']
+        else:
+            or_str, new_str = None, None
 
-            tin_dir = join(output_dir, tin_variable)
-
-            xls = pd.ExcelFile(join(tin_dir, 'confusion_matrices.xlsx'))
-            cm_arrays = []
-            for sheet in xls.sheet_names:
-                cm_sheet = pd.read_excel(xls, sheet_name=sheet, index_col=0)
-                cm_arrays.append(cm_sheet.values)
-
-            avg_cm_array = np.sum(np.asarray(cm_arrays), axis=0)
-            avg_cm = pd.DataFrame(avg_cm_array, index=list(cm_sheet), columns=list(cm_sheet))
-            fname = join(tin_dir, 'average confusion matrix.png')
-            plot_confusion_matrix(avg_cm, ordered_strings=or_str, new_strings=new_str, norm=False, fname=fname)
-
+        output_dir = './../data/%s/' % tin_variable
+        for model in listdir(output_dir):
+            tin_dir = join(output_dir, model)
             xls = pd.ExcelFile(join(tin_dir, 'confusion_matrices_normalized.xlsx'))
             cm_arrays = []
             for sheet in xls.sheet_names:
                 cm_sheet = pd.read_excel(xls, sheet_name=sheet, index_col=0)
                 cm_arrays.append(cm_sheet.values)
-
             avg_cm_array = np.mean(np.asarray(cm_arrays), axis=0)
             avg_cm = pd.DataFrame(avg_cm_array, index=list(cm_sheet), columns=list(cm_sheet))
             fname = join(tin_dir, 'average confusion matrix normalized.png')
