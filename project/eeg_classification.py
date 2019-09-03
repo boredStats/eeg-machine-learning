@@ -215,6 +215,8 @@ def eeg_classify(eeg_data, target_data, target_type, model, outdir, resample='SM
         elif model is 'extra_trees':
             predicted, feature_importances, clf = extra_trees(x_train_fs, y_train, x_test_fs, cleaned_features)
             classifier_coefficients[foldname] = feature_importances
+        elif model is 'knn':
+            predicted, clf = knn(x_train_fs, y_train, x_test_fs)
 
         classifier_objects[foldname] = clf
 
@@ -310,12 +312,12 @@ def classification_main(covariates=True):
 
     ml_data_with_covariates = pd.concat([conn_data, covariate_data], axis=1)
 
-    models = ['svm', 'extra_trees']
+    models = ['svm', 'extra_trees', 'knn']
     resample_methods = ['no_resample', 'ROS', 'SMOTE', 'RUS']
 
     targets = {}
-    # side_data = pu.convert_tin_to_str(behavior_data['tinnitus_side'].values.astype(float), 'tinnitus_side')
-    # targets['tin_side'] = side_data
+    side_data = pu.convert_tin_to_str(behavior_data['tinnitus_side'].values.astype(float), 'tinnitus_side')
+    targets['tin_side'] = side_data
 
     type_data = pu.convert_tin_to_str(behavior_data['tinnitus_type'].values.astype(float), 'tinnitus_type')
     targets['tin_type'] = type_data
@@ -349,8 +351,9 @@ def classification_main(covariates=True):
     print('%s: Finished' % pu.ctime())
 
 
-classification_main(covariates=True)
-# classification_main(covariates=False)
+# classification_main(covariates=True)
+classification_main(covariates=False)
+
 
 def test_gridsearch():
     def gridsearch_pipe(cv=None):
@@ -367,7 +370,7 @@ def test_gridsearch():
 
         pipe = Pipeline([
             ('preprocess_data', StandardScaler()),
-            # ('feature_selection', SelectFromModel(ExtraTreesClassifier(random_state=13), threshold="mean")),
+            ('feature_selection', SelectFromModel(ExtraTreesClassifier(random_state=13), threshold="2*mean")),
             ('grid', GridSearchCV(SVC(), param_grid=param_grid, cv=cv, scoring='r2'))])
 
         return pipe
