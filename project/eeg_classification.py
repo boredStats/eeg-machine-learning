@@ -5,7 +5,7 @@ import proj_utils as pu
 from os.path import isdir, join
 from os import mkdir
 from copy import deepcopy
-from imblearn.over_sampling import RandomOverSampler
+from imblearn.over_sampling import RandomOverSampler, SMOTE
 from imblearn.under_sampling import RandomUnderSampler
 from sklearn import ensemble, feature_selection, model_selection, preprocessing, svm, metrics, neighbors
 from sklearn.utils.testing import ignore_warnings
@@ -162,7 +162,8 @@ def eeg_classify(eeg_data, target_data, target_type, model, outdir, resample=Non
         x_res, y_res = eeg_data.values, np.asarray(target_data)
         rs_check = 'no_resample'
     elif resample is 'over':
-        resampler = RandomOverSampler(sampling_strategy='not majority', random_state=seed)
+        # resampler = RandomOverSampler(sampling_strategy='not majority', random_state=seed)
+        resampler = SMOTE(sampling_strategy='not majority', random_state=seed)
         x_res, y_res = resampler.fit_resample(eeg_data, target_data)
         rs_check = 'oversampled'
     elif resample is 'under':
@@ -293,7 +294,7 @@ def type_classification_drop_mixed(ml_data, behavior_data, output_dir, models=No
 def classification_main(ml_data, behavior_data, output_dir, models=None):
     if models is None:
         models = ['extra_trees']
-    resample_methods = [None, 'over', 'under']
+    resample_methods = ['over']  # [None, 'over', 'under']
 
     targets = {}
     side_data = pu.convert_tin_to_str(behavior_data['tinnitus_side'].values.astype(float), 'tinnitus_side')
@@ -339,7 +340,8 @@ if __name__ == "__main__":
 
     models = ['svm', 'extra_trees', 'knn']
     # classification_main(ml_data, behavior_data, output_dir, models=models)
-    side_classification_drop_asym(ml_data, behavior_data, output_dir, models=models)
-    type_classification_drop_mixed(ml_data, behavior_data, output_dir, models=models)
+    # side_classification_drop_asym(ml_data, behavior_data, output_dir, models=models)
+    # type_classification_drop_mixed(ml_data, behavior_data, output_dir, models=models)
 
     print('%s: Finished' % pu.ctime())
+
