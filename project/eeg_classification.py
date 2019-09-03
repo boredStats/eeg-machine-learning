@@ -147,10 +147,7 @@ def feature_selection_without_covariates(x_train, x_test, y_train, feature_names
 
 
 @ignore_warnings(category=ConvergenceWarning)
-def eeg_classify(eeg_data, target_data, target_type, model, outdir, resample=None):
-    target_outdir = join(outdir, target_type)
-    if not isdir(target_outdir):
-        mkdir(target_outdir)
+def eeg_classify(eeg_data, target_data, target_type, model, outdir, resample='SMOTE'):
 
     feature_names = list(eeg_data)
     if "categorical_sex_male" in feature_names:
@@ -158,23 +155,28 @@ def eeg_classify(eeg_data, target_data, target_type, model, outdir, resample=Non
     else:
         cv_check = 'without_covariates'
 
-    if resample is None:
-        x_res, y_res = eeg_data.values, np.asarray(target_data)
-        rs_check = 'no_resample'
-    elif resample is 'over':
-        # resampler = RandomOverSampler(sampling_strategy='not majority', random_state=seed)
-        resampler = SMOTE(sampling_strategy='not majority', random_state=seed)
-        x_res, y_res = resampler.fit_resample(eeg_data, target_data)
-        rs_check = 'oversampled'
-    elif resample is 'under':
-        resampler = RandomUnderSampler(sampling_strategy='not minority', random_state=seed)
-        x_res, y_res = resampler.fit_resample(eeg_data, target_data)
-        rs_check = 'undersampled'
+    if resample is 'no_resample':
+        class NoResample:  # for convenience
+            @staticmethod
+            def fit_resample(a, b):
+                return a.values, np.asarray(b)
+        resampler = NoResample()
+        
+    elif resample is 'ROS':
+        resampler = RandomOverSampler(sampling_strategy='not majority', random_state=seed)
 
-    model_outdir = join(target_outdir, '%s_%s_%s' % (model, cv_check, rs_check))
+    elif resample is 'SMOTE':
+        resampler = SMOTE(sampling_strategy='not majority', random_state=seed)
+
+    elif resample is 'RUS':
+        resampler = RandomUnderSampler(sampling_strategy='not minority', random_state=seed)
+
+    x_res, y_res = resampler.fit_resample(eeg_data, target_data)
+
+    model_outdir = join(outdir, '%s %s %s %s' % (target_type, model, cv_check, resample))
     if not isdir(model_outdir):
         mkdir(model_outdir)
-    print('%s: Running classification - %s %s %s %s' % (pu.ctime(), target_type, model, cv_check, rs_check))
+    print('%s: Running classification - %s %s %s %s' % (pu.ctime(), target_type, model, cv_check, resample))
 
     # Apply k-fold splitter
     n_splits = 10
@@ -213,9 +215,6 @@ def eeg_classify(eeg_data, target_data, target_type, model, outdir, resample=Non
         elif model is 'extra_trees':
             predicted, feature_importances, clf = extra_trees(x_train_fs, y_train, x_test_fs, cleaned_features)
             classifier_coefficients[foldname] = feature_importances
-
-        elif model is 'knn':
-            predicted, clf = knn(x_train_fs, y_train, x_test_fs)
 
         classifier_objects[foldname] = clf
 
@@ -272,6 +271,8 @@ def side_classification_drop_asym(ml_data, behavior_data, output_dir, models=Non
             eeg_classify(ml_copy, target_cleaned, 'tinnitus_side_no_asym', model, output_dir, resample=res)
 
 
+# side_classification_drop_asym(ml_data, behavior_data, output_dir, models=models)
+
 def type_classification_drop_mixed(ml_data, behavior_data, output_dir, models=None):
     print('%s: Running classification on tinnitus type, dropping mixed type subjects' % pu.ctime())
     ml_copy = deepcopy(ml_data)
@@ -291,17 +292,33 @@ def type_classification_drop_mixed(ml_data, behavior_data, output_dir, models=No
             eeg_classify(ml_copy, target_cleaned, 'tinnitus_type_no_mixed', model, output_dir, resample=res)
 
 
-def classification_main(ml_data, behavior_data, output_dir, models=None):
-    if models is None:
-        models = ['extra_trees']
-    resample_methods = ['over']  # [None, 'over', 'under']
+# type_classification_drop_mixed(ml_data, behavior_data, output_dir, models=models)
+
+def classification_main(covariates=True):
+    output_dir = './../data/eeg_classification'
+    if not isdir(output_dir):
+        mkdir(output_dir)
+
+    print('%s: Loading data' % pu.ctime())
+    behavior_data, conn_data = pu.load_data_full_subjects()
+    ml_data_without_covariates = conn_data.astype(float)
+
+    categorical_variables = ['smoking', 'deanxit_antidepressants', 'rivotril_antianxiety', 'sex']
+    categorical_data = behavior_data[categorical_variables]
+    dummy_coded_categorical = pu.dummy_code_binary(categorical_data)
+    covariate_data = pd.concat([behavior_data['age'], dummy_coded_categorical], axis=1)
+
+    ml_data_with_covariates = pd.concat([conn_data, covariate_data], axis=1)
+
+    models = ['svm', 'extra_trees']
+    resample_methods = ['no_resample', 'ROS', 'SMOTE', 'RUS']
 
     targets = {}
-    side_data = pu.convert_tin_to_str(behavior_data['tinnitus_side'].values.astype(float), 'tinnitus_side')
-    targets['tinnitus_side'] = side_data
+    # side_data = pu.convert_tin_to_str(behavior_data['tinnitus_side'].values.astype(float), 'tinnitus_side')
+    # targets['tin_side'] = side_data
 
     type_data = pu.convert_tin_to_str(behavior_data['tinnitus_type'].values.astype(float), 'tinnitus_type')
-    targets['tinnitus_type'] = type_data
+    targets['tin_type'] = type_data
 
     tq_data = behavior_data['distress_TQ'].values
     high_low_thresholds = [0, 46, 84]
@@ -313,10 +330,15 @@ def classification_main(ml_data, behavior_data, output_dir, models=None):
     tq_grade = ['Grade_%d' % t for t in binned_target]
     targets['TQ_grade'] = tq_grade
 
-    hads_thresholds = [8, 11, 21]  # 0-7 (normal); 8-10 (borderline); 11-21 (abnormal)
-    anx_binned = np.digitize(behavior_data['anxiety_score'].values.astype(float), bins=hads_thresholds, right=True)
-    dep_binned = np.digitize(behavior_data['depression_score'].values.astype(float), bins=hads_thresholds, right=True)
-    targets['hads_OVR'] = convert_hads_to_single_label(np.vstack((anx_binned, dep_binned)).T)
+    # hads_thresholds = [8, 11, 21]  # 0-7 (normal); 8-10 (borderline); 11-21 (abnormal)
+    # anx_binned = np.digitize(behavior_data['anxiety_score'].values.astype(float), bins=hads_thresholds, right=True)
+    # dep_binned = np.digitize(behavior_data['depression_score'].values.astype(float), bins=hads_thresholds, right=True)
+    # targets['hads_OVR'] = convert_hads_to_single_label(np.vstack((anx_binned, dep_binned)).T)
+
+    if covariates:
+        ml_data = ml_data_with_covariates
+    else:
+        ml_data = ml_data_without_covariates
 
     for target in targets:
         target_data = targets[target]
@@ -324,24 +346,53 @@ def classification_main(ml_data, behavior_data, output_dir, models=None):
             for res in resample_methods:
                 eeg_classify(ml_data, target_data, target_type=target, model=model, outdir=output_dir, resample=res)
 
+    print('%s: Finished' % pu.ctime())
 
-if __name__ == "__main__":
-    output_dir = './../data/'
+
+classification_main(covariates=True)
+# classification_main(covariates=False)
+
+def test_gridsearch():
+    def gridsearch_pipe(cv=None):
+        from sklearn.pipeline import Pipeline
+        from sklearn.preprocessing import StandardScaler
+        from sklearn.feature_selection import SelectFromModel
+        from sklearn.ensemble import ExtraTreesClassifier
+        from sklearn.model_selection import GridSearchCV
+        from sklearn.svm import SVC
+        kernel_range = ['linear', 'rbf', 'poly']
+        c_range = np.arange(start=1, stop=100, step=10, dtype=int)
+        gamma_range = np.arange(.01, 1, .01)
+        param_grid = {'C': c_range, 'gamma': gamma_range, 'kernel': kernel_range}
+
+        pipe = Pipeline([
+            ('preprocess_data', StandardScaler()),
+            # ('feature_selection', SelectFromModel(ExtraTreesClassifier(random_state=13), threshold="mean")),
+            ('grid', GridSearchCV(SVC(), param_grid=param_grid, cv=cv, scoring='r2'))])
+
+        return pipe
+
     print('%s: Loading data' % pu.ctime())
     behavior_data, conn_data = pu.load_data_full_subjects()
-    conn_data.astype(float)
+    ml_data_without_covariates = conn_data.astype(float)
 
-    categorical_variables = ['smoking', 'deanxit_antidepressants', 'rivotril_antianxiety', 'sex']
-    categorical_data = behavior_data[categorical_variables]
-    dummy_coded_categorical = pu.dummy_code_binary(categorical_data)
-    covariate_data = pd.concat([behavior_data['age'], dummy_coded_categorical], axis=1)
+    side_data = pu.convert_tin_to_str(behavior_data['tinnitus_side'].values.astype(float), 'tinnitus_side')
 
-    ml_data = pd.concat([conn_data, covariate_data], axis=1)
+    resampler = SMOTE(sampling_strategy='not majority', random_state=seed)
 
-    models = ['svm', 'extra_trees', 'knn']
-    # classification_main(ml_data, behavior_data, output_dir, models=models)
-    # side_classification_drop_asym(ml_data, behavior_data, output_dir, models=models)
-    # type_classification_drop_mixed(ml_data, behavior_data, output_dir, models=models)
+    x_res, y_res = resampler.fit_resample(ml_data_without_covariates, side_data)
 
-    print('%s: Finished' % pu.ctime())
+    n_splits = 10
+    skf = model_selection.StratifiedKFold(n_splits=n_splits, random_state=seed)
+    skf.get_n_splits(x_res, y_res)
+
+    pipe = gridsearch_pipe(cv=skf).fit(x_res, y_res)
+    gridsearch = pipe[-1]
+    best_params = gridsearch.best_params_
+    print(best_params)
+    best_score = gridsearch.best_score_
+    print(best_score)
+
+
+# test_gridsearch()
 
