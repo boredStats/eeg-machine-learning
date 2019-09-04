@@ -256,13 +256,13 @@ def plot_age_historgram(output_dir=None):
 
 
 if __name__ == "__main__":
-    output_dir = './../data/eeg_classification'
     models = ['extra_trees']  # ['svm', 'extra_trees', 'sgd', 'knn']
     variables = ['tinnitus_side', 'tinnitus_type', 'TQ_grade', 'TQ_high_low']
     # boxplot_testing()
     # conf_mat_testing(fname='test_confusion_matrix.png')
     # replot_confusion_matrices()
     # plot_extra_trees_features()
+
     # get_variable_data()
 
-    plot_age_historgram(output_dir)
+    plot_age_historgram(output_dir='./../data/eeg_classification')
