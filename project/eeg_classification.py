@@ -352,8 +352,7 @@ def classification_main(covariates=True):
 
 
 # classification_main(covariates=True)
-classification_main(covariates=False)
-
+# classification_main(covariates=False)
 
 def test_gridsearch():
     def gridsearch_pipe(cv=None):
@@ -363,15 +362,15 @@ def test_gridsearch():
         from sklearn.ensemble import ExtraTreesClassifier
         from sklearn.model_selection import GridSearchCV
         from sklearn.svm import SVC
-        kernel_range = ['linear', 'rbf', 'poly']
-        c_range = np.arange(start=1, stop=100, step=10, dtype=int)
-        gamma_range = np.arange(.01, 1, .01)
-        param_grid = {'C': c_range, 'gamma': gamma_range, 'kernel': kernel_range}
+        kernel_range = ('linear', 'rbf')  # , 'poly']
+        c_range = [1, 10, 100]  # np.arange(start=1, stop=100, step=10, dtype=int)
+        # gamma_range = np.arange(.01, 1, .01)
+        param_grid = {'C': c_range}  # , 'gamma': gamma_range}  # , 'kernel': kernel_range}
 
         pipe = Pipeline([
             ('preprocess_data', StandardScaler()),
             ('feature_selection', SelectFromModel(ExtraTreesClassifier(random_state=13), threshold="2*mean")),
-            ('grid', GridSearchCV(SVC(), param_grid=param_grid, cv=cv, scoring='r2'))])
+            ('grid', GridSearchCV(SVC(kernel='rbf'), param_grid=param_grid, cv=cv, scoring='balanced_accuracy'))])
 
         return pipe
 
@@ -396,6 +395,7 @@ def test_gridsearch():
     best_score = gridsearch.best_score_
     print(best_score)
 
+    print('%s: Finished' % pu.ctime())
 
-# test_gridsearch()
 
+test_gridsearch()
