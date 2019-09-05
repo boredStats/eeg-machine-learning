@@ -1,7 +1,11 @@
 import os
+import numpy as np
 import pandas as pd
 import seaborn as sns
+import matplotlib as mpl
 import matplotlib.pyplot as plt
+
+sns.set(style='darkgrid')
 
 
 def load_performance(tin_variable, acc_measure='Balanced accuracy', filterby=None):
@@ -59,15 +63,13 @@ def test_load_performance():
     print(list(res))
 
 
-def acc_line_plots(plot_data, x_group, y, hue_group=None, order=None, outdir=None):
+def acc_line_plots(plot_data, x_group, y, hue_group=None, order=None, ax=None, linestyles='-', color='b', markers='.'):
     sns.set(style='darkgrid')
-    fig, ax = plt.subplots(figsize=(8, 6))
-    sns.pointplot(x=x_group, y=y, hue=hue_group, data=plot_data, ax=ax, order=order)
-    ax.set_ylim([0, 1])
-    if outdir is not None:
-        fig.savefig(outdir)
-    else:
-        return ax
+    if ax is None:
+        fig, ax = plt.subplots(figsize=(8, 6))
+    g = sns.pointplot(x=x_group, y=y, hue=hue_group, ax=ax, data=plot_data, order=order,
+                      linestyles=linestyles, color=color, markers=markers, dodge=False)
+    return g
 
 
 def pretty_keys(keysplit):
@@ -113,27 +115,66 @@ def pretty_keys(keysplit):
     return pretty_tvar, pretty_clf, pretty_cv, pretty_rs
 
 
-def plot_avg_accuracy(tin_variable, acc='Balanced accuracy', filters=None, outdir=None):
-    # acc options: 'Balanced accuracy', 'Chance accuracy'
-    accuracy_data = load_performance(tin_variable=tin_variable, filterby=filters)
-    plot_data = pd.DataFrame(columns=['Accuracy', 'Tinnitus variable', 'Classifier', 'Covariates', 'Resampling method'])
-    for key in list(accuracy_data):
-        keysplit = key.split(" ")
-        tvar, clf, cv, rs = pretty_keys(keysplit)
+def accuracy_lineplot_resampling_comparison():
+    mpl.rcParams['axes.labelsize'] = 18
+    perf = load_performance(tin_variable='tin_side')
 
-        scores = accuracy_data[key][acc]
-        val = scores.loc['Average']
-        new_row = {'Accuracy': val,
-                   'Tinnitus variable': tvar,
-                   'Classifier': clf,
-                   'Covariates': cv,
-                   'Resampling method': rs}
-        plot_data = plot_data.append(new_row, ignore_index=True)
-    print(plot_data)
+    def _create_plot_df(accuracy_data, acc='Balanced accuracy'):
+        plot_df = pd.DataFrame(
+            columns=['Accuracy', 'Tinnitus variable', 'Classifier', 'Covariates', 'Resampling method'])
+        for key in list(accuracy_data):
+            keysplit = key.split(" ")
+            tvar, clf, cv, rs = pretty_keys(keysplit)
 
-    order = ['None', 'Undersampling', 'SMOTE', 'Oversampling']
-    cov_ver = acc_line_plots(plot_data, x_group='Resampling method', y='Accuracy', hue_group='Classifier', order=order)
+            scores = accuracy_data[key][acc]
+            val = scores.loc['Average']
+            new_row = {'Accuracy': val,
+                       'Tinnitus variable': tvar,
+                       'Classifier': clf,
+                       'Covariates': cv,
+                       'Resampling method': rs}
+            plot_df = plot_df.append(new_row, ignore_index=True)
+
+        return plot_df
+    df = _create_plot_df(perf)
+
+    resampling_order = ['None', 'Undersampling', 'SMOTE', 'Oversampling']
+
+    classifiers = ['ExtraTrees', 'SVM', 'k-Nearest Neighbors']
+    color_options = ['tab:green', 'tab:blue', 'tab:red']
+
+    covariate_check = ['With covariates', 'Without covariates']
+    line_options = ['-', '--']
+
+    fig, ax = plt.subplots(figsize=(12, 9))
+    plot_data = {}
+    x = np.arange(1, 5)
+    for clf_index, clf in enumerate(classifiers):
+        clf_slice = df[df['Classifier'] == clf]
+
+        for cov_index, cov in enumerate(covariate_check):
+            cov_slice = clf_slice[clf_slice['Covariates'] == cov]
+            cov_slice.set_index('Resampling method', inplace=True)
+
+            temp = cov_slice.loc[resampling_order]
+            y = temp['Accuracy'].values
+            line_data = (x, y, color_options[clf_index], line_options[cov_index])
+            plot_data['%s %s' % (clf, cov)] = line_data
+            color = color_options[clf_index]
+            line = line_options[cov_index]
+            plt.plot(x, y, c=color, linestyle=line)
+
+    ax.set_ylim([0, 1])
+    ax.set_xlim([0.8, 4.2])
+    ax.set_xticks(x)
+    ax.set_xticklabels(resampling_order)
+    ax.set_ylabel('Accuracy')
+    ax.set_xlabel('Resampling method')
+    ax.tick_params(axis='x', labelsize=16)
+    ax.tick_params(axis='y', labelsize=13)
+
+    fig.savefig('test.png', bbox_inches='tight')
+    # plt.show()
 
 
-
-plot_avg_accuracy(tin_variable='tin_side', filters=('with_covariates'))
+accuracy_lineplot_resampling_comparison()
