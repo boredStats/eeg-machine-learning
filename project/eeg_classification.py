@@ -9,6 +9,7 @@ from imblearn.over_sampling import RandomOverSampler, SMOTE
 from imblearn.under_sampling import RandomUnderSampler
 from sklearn import ensemble, feature_selection, model_selection, preprocessing, svm, metrics, neighbors
 from sklearn.utils.testing import ignore_warnings
+from sklearn.utils import shuffle
 from sklearn.exceptions import ConvergenceWarning
 
 
@@ -147,7 +148,7 @@ def feature_selection_without_covariates(x_train, x_test, y_train, feature_names
 
 
 @ignore_warnings(category=ConvergenceWarning)
-def eeg_classify(eeg_data, target_data, target_type, model, outdir, resample='SMOTE'):
+def eeg_classify(eeg_data, target_data, target_type, model, outdir=None, resample='SMOTE'):
 
     feature_names = list(eeg_data)
     if "categorical_sex_male" in feature_names:
@@ -173,9 +174,10 @@ def eeg_classify(eeg_data, target_data, target_type, model, outdir, resample='SM
 
     x_res, y_res = resampler.fit_resample(eeg_data, target_data)
 
-    model_outdir = join(outdir, '%s %s %s %s' % (target_type, model, cv_check, resample))
-    if not isdir(model_outdir):
-        mkdir(model_outdir)
+    if outdir is not None:
+        model_outdir = join(outdir, '%s %s %s %s' % (target_type, model, cv_check, resample))
+        if not isdir(model_outdir):
+            mkdir(model_outdir)
     print('%s: Running classification - %s %s %s %s' % (pu.ctime(), target_type, model, cv_check, resample))
 
     # Apply k-fold splitter
@@ -238,17 +240,22 @@ def eeg_classify(eeg_data, target_data, target_type, model, outdir, resample='SM
     scores_dict = {'accuracy scores': score_df,
                    'f1 scores': f1_df}
 
-    pu.save_xls(scores_dict, join(model_outdir, 'performance.xlsx'))
+    try:
+        pu.save_xls(scores_dict, join(model_outdir, 'performance.xlsx'))
 
-    # Saving coefficients
-    if bool(classifier_coefficients):
-        pu.save_xls(classifier_coefficients, join(model_outdir, 'coefficients.xlsx'))
-    pu.save_xls(cm_dict, join(model_outdir, 'confusion_matrices.xlsx'))
-    pu.save_xls(norm_cm_dict, join(model_outdir, 'confusion_matrices_normalized.xlsx'))
+        # Saving coefficients
+        if bool(classifier_coefficients):
+            pu.save_xls(classifier_coefficients, join(model_outdir, 'coefficients.xlsx'))
+        pu.save_xls(cm_dict, join(model_outdir, 'confusion_matrices.xlsx'))
+        pu.save_xls(norm_cm_dict, join(model_outdir, 'confusion_matrices_normalized.xlsx'))
 
-    # Saving classifier object
-    with open(join(model_outdir, 'classifier_object.pkl'), 'wb') as file:
-        pkl.dump(classifier_objects, file)
+        # Saving classifier object
+        with open(join(model_outdir, 'classifier_object.pkl'), 'wb') as file:
+            pkl.dump(classifier_objects, file)
+    except Exception:
+        pass
+
+    return scores_dict
 
 
 def side_classification_drop_asym(ml_data, behavior_data, output_dir, models=None):
@@ -296,7 +303,7 @@ def type_classification_drop_mixed(ml_data, behavior_data, output_dir, models=No
 
 # type_classification_drop_mixed(ml_data, behavior_data, output_dir, models=models)
 
-def classification_main(covariates=True):
+def classification_main(covariates=True, n_iters=0):
     output_dir = './../data/eeg_classification'
     if not isdir(output_dir):
         mkdir(output_dir)
@@ -339,20 +346,45 @@ def classification_main(covariates=True):
 
     if covariates:
         ml_data = ml_data_with_covariates
+        cv_check = 'with_covariates'
     else:
         ml_data = ml_data_without_covariates
+        cv_check = 'without_covariates'
 
-    for target in targets:
-        target_data = targets[target]
+    if n_iters != 0:
         for model in models:
             for res in resample_methods:
-                eeg_classify(ml_data, target_data, target_type=target, model=model, outdir=output_dir, resample=res)
+                for target in targets:
+                    target_data = targets[target]
+                    perm_scores = {}
+
+                    model_outdir = join(output_dir, '%s %s %s %s' % (target, model, cv_check, res))
+                    if not isdir(model_outdir):
+                        mkdir(model_outdir)
+                    for n in range(n_iters):
+                        perm_target = shuffle(target_data)
+                        scores = eeg_classify(
+                            ml_data,
+                            perm_target,
+                            target_type=target,
+                            model=model,
+                            resample=res)
+                        perm_scores['Iter%05d' % n] = scores
+
+                    with open(join(model_outdir, 'perm_scores.pkl'), 'wb') as file:
+                        pkl.dump(perm_scores, file)
+    else:
+        for target in targets:
+            target_data = targets[target]
+            for model in models:
+                for res in resample_methods:
+                    eeg_classify(ml_data, target_data, target_type=target, model=model, outdir=output_dir, resample=res)
 
     print('%s: Finished' % pu.ctime())
 
 
-# classification_main(covariates=True)
-# classification_main(covariates=False)
+classification_main(covariates=True, n_iters=1000)
+classification_main(covariates=False, n_iters=1000)
 
 def test_gridsearch():
     def gridsearch_pipe(cv=None):
