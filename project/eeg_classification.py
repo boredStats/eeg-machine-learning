@@ -161,7 +161,7 @@ def eeg_classify(eeg_data, target_data, target_type, model, outdir, resample='SM
             def fit_resample(a, b):
                 return a.values, np.asarray(b)
         resampler = NoResample()
-        
+
     elif resample is 'ROS':
         resampler = RandomOverSampler(sampling_strategy='not majority', random_state=seed)
 

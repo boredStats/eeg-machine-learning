@@ -34,7 +34,7 @@ def plot_confusion_matrix(confusion_matrix, ordered_strings=None, new_strings=No
         vmin, vmax = None, None
         fmt = "g"
     cmap = plt.cm.Blues
-    sns.set(context='notebook', font_scale=1.3)
+    sns.set(font_scale=1.3)
 
     fig, ax = plt.subplots(figsize=(8, 6))
     sns.heatmap(data=plot_matrix, vmin=vmin, vmax=vmax, fmt=fmt, annot=True, ax=ax, cmap=cmap)
@@ -127,31 +127,35 @@ def conf_mat_testing(fname=None):
 
 
 def replot_confusion_matrices():
-    models = ['svm', 'extra_trees', 'sgd', 'knn']
-    variables = ['tinnitus_side', 'tinnitus_type', 'TQ_grade', 'TQ_high_low']
-
-    for tin_variable in variables:
-        if 'side' in tin_variable:
+    import os
+    output_dir = os.path.abspath('./../data/eeg_classification')
+    res_dirs = [d for d in os.listdir(output_dir) if os.path.isdir(os.path.join(output_dir, d))]
+    for d in res_dirs:
+        if 'side' in d:
             or_str = ['Left', 'Left>Right', 'Bilateral', 'Right>Left', 'Right']
             new_str = ['L', 'L>R', 'L=R', 'R>L', 'R']
-        elif 'type' in tin_variable:
+        elif 'type' in d:
             or_str = ['NBN', 'PT_and_NBN', 'PT']
             new_str = ['NBN', 'PT+NBN', 'PT']
+        elif 'high' in d:
+            or_str = [1, 2]
+            new_str = ['Low', 'High']
+        elif 'grade' in d:
+            or_str = ['Grade_1', 'Grade_2', 'Grade_3', 'Grade_4']
+            new_str = ['Grade 1', 'Grade 2', 'Grade 3', 'Grade 4']
         else:
             or_str, new_str = None, None
 
-        output_dir = './../data/%s/' % tin_variable
-        for model in listdir(output_dir):
-            tin_dir = join(output_dir, model)
-            xls = pd.ExcelFile(join(tin_dir, 'confusion_matrices_normalized.xlsx'))
-            cm_arrays = []
-            for sheet in xls.sheet_names:
-                cm_sheet = pd.read_excel(xls, sheet_name=sheet, index_col=0)
-                cm_arrays.append(cm_sheet.values)
-            avg_cm_array = np.mean(np.asarray(cm_arrays), axis=0)
-            avg_cm = pd.DataFrame(avg_cm_array, index=list(cm_sheet), columns=list(cm_sheet))
-            fname = join(tin_dir, 'average confusion matrix normalized.png')
-            plot_confusion_matrix(avg_cm, ordered_strings=or_str, new_strings=new_str, norm=True, fname=fname)
+        tin_dir = join(output_dir, d)
+        xls = pd.ExcelFile(join(tin_dir, 'confusion_matrices_normalized.xlsx'))
+        cm_arrays = []
+        for sheet in xls.sheet_names:
+            cm_sheet = pd.read_excel(xls, sheet_name=sheet, index_col=0)
+            cm_arrays.append(cm_sheet.values)
+        avg_cm_array = np.mean(np.asarray(cm_arrays), axis=0)
+        avg_cm = pd.DataFrame(avg_cm_array, index=list(cm_sheet), columns=list(cm_sheet))
+        fname = join(tin_dir, 'average confusion matrix normalized.png')
+        plot_confusion_matrix(avg_cm, ordered_strings=or_str, new_strings=new_str, norm=True, fname=fname)
 
 
 def plot_extra_trees_features():
@@ -260,9 +264,9 @@ if __name__ == "__main__":
     variables = ['tinnitus_side', 'tinnitus_type', 'TQ_grade', 'TQ_high_low']
     # boxplot_testing()
     # conf_mat_testing(fname='test_confusion_matrix.png')
-    # replot_confusion_matrices()
+    replot_confusion_matrices()
     # plot_extra_trees_features()
 
     # get_variable_data()
 
-    plot_age_historgram(output_dir='./../data/eeg_classification')
+    # plot_age_historgram(output_dir='./../data/eeg_classification')

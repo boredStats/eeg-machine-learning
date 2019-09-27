@@ -115,9 +115,13 @@ def pretty_keys(keysplit):
     return pretty_tvar, pretty_clf, pretty_cv, pretty_rs
 
 
-def accuracy_lineplot_resampling_comparison():
+def accuracy_lineplot_resampling_comparison(tinvar=None):
     mpl.rcParams['axes.labelsize'] = 18
-    perf = load_performance(tin_variable='tin_side')
+    if tinvar is None:
+        v = 'tin_side'
+    else:
+        v = tinvar
+    perf = load_performance(tin_variable=v)
 
     def _create_plot_df(accuracy_data, acc='Balanced accuracy'):
         plot_df = pd.DataFrame(
@@ -172,9 +176,14 @@ def accuracy_lineplot_resampling_comparison():
     ax.set_xlabel('Resampling method')
     ax.tick_params(axis='x', labelsize=16)
     ax.tick_params(axis='y', labelsize=13)
-
-    fig.savefig('test.png', bbox_inches='tight')
+    if tinvar is None:
+        fig.savefig('test_accuracy.png', bbox_inches='tight')
+    else:
+        fig.savefig('%s_accuracy.png' % tinvar, bbox_inches='tight')
     # plt.show()
 
 
+tinvars = ["tin_side", "tin_type", "TQ_grade", "TQ_high_low"]
 accuracy_lineplot_resampling_comparison()
+for tinvar in tinvars:
+    accuracy_lineplot_resampling_comparison(tinvar)
