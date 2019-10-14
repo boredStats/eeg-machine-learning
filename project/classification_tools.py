@@ -24,7 +24,6 @@ class EEG_Classifier:
         self.kfold_type = kfold_type
         self.n_splits = n_splits
         self.seed = seed
-        return self
 
     @staticmethod
     def _splitter(type='stratified', n_splits=10, random_state=None):
@@ -46,6 +45,19 @@ class EEG_Classifier:
         chance = balanced_accuracy_score(y_test, predicted, adjusted=True)
         f1 = f1_score(y_test, predicted, average=None)
         return balanced, chance, f1
+
+    def resample(
+            self,
+            x_train, x_test,
+            y_train, y_test):
+        resampler = _create_resampler(
+            type=self.resample_type,
+            random_state=self.seed)
+        x_stacked = pd.concat([x_train, x_test], axis=1)
+        y_stacked = pd.concat([y_train, y_test])
+        x_res, y_res = resampler.fit_resample(x_stacked, y_stacked)
+
+
 
     def feature_selector(
             self, x_train, x_test, y_train,
@@ -79,19 +91,14 @@ class EEG_Classifier:
         clf = ensemble.ExtraTreesClassifier(random_state=self.seed)
         fs_model = SelectFromModel(clf, threshold=thresh)
 
-        self.x_train_fs = fs_model.fit_transform(x_train_data, y_train)
-        self.x_test_fs = fs_model.transform(x_test_data)
-        self.feature_indices = fs_model.get_support(indices=True)
+        x_train_fs = fs_model.fit_transform(x_train_data, y_train)
+        x_test_fs = fs_model.transform(x_test_data)
+        feature_indices = fs_model.get_support(indices=True)
 
-        return self
+        return x_train_fs, x_test_fs, feature_indices
 
     def classify(self, eeg_data, target_data, gridsearch=None):
         feature_names, cont_indices, cat_indices = check_eeg_data(eeg_data)
-
-        resampler = _create_resampler(
-            type=self.resample_type,
-            random_state=self.seed)
-        x_res, y_res = resampler.fit_resample(eeg_data, target_data)
 
         kfolder = self._splitter(
             type=self.kfold_type,
@@ -111,20 +118,23 @@ class EEG_Classifier:
         else:
             grid_df = None
 
-        features_by_fold, confusion_matrices,  = {}
+        features_by_fold, confusion_matrices,  = {}, {}
         balanced_acc, chance_acc, f1_scores = [], [], []
-        for t, train_idx, test_idx in enumerate(kfolder.split(x_res, y_res)):
-            x_train, x_test = x_res[train_idx], x_res[test_idx]
-            y_train, y_test = y_res[train_idx], y_res[test_idx]
+        for t, (train_idx, test_idx) in enumerate(kfolder.split(eeg_data.values, target_data)):
+            x_train, x_test = eeg_data.values[train_idx], eeg_data.values[test_idx]
+            y_train, y_test = target_data[train_idx], target_data[test_idx]
 
-            self.feature_selector(
+
+            # resamp
+
+            x_train_fs, x_test_fs, feature_indices = self.feature_selector(
                 x_train, x_test, y_train,
                 continuous_indices=cont_indices,
                 categorical_indices=cat_indices)
 
-            cleaned_features = [feature_names[i] for i in self.feature_indices]
-            clf.fit(self.x_train_fs, y_train)
-            predicted = clf.predict(self.x_test_fs)
+            cleaned_features = [feature_names[i] for i in feature_indices]
+            clf.fit(x_train_fs, y_train)
+            predicted = clf.predict(x_test_fs)
 
             try:
                 importances = np.ndarray.flatten(clf.feature_importances_)
@@ -190,6 +200,7 @@ def check_eeg_data(eeg_df):
 def _create_resampler(type=None, random_state=None):
     if type is None:
         class NoResample:
+            @staticmethod
             def fit_resample(a, b):
                 return a.values, np.asarray(b)
         resampler = NoResample()
@@ -211,7 +222,9 @@ def _create_resampler(type=None, random_state=None):
 
 def _create_classifier(type='ExtraTrees', kwargs=None, random_state=None):
     if type == 'ExtraTrees':
-        clf = ensemble.ExtraTreesClassifier(random_state=random_state)
+        clf = ensemble.ExtraTreesClassifier(
+            n_estimators=100,
+            random_state=random_state)
     elif type == 'SVM':
         clf = svm.SVC()
     elif type == 'KNN':
@@ -255,13 +268,16 @@ def _performance_testing():
 
     side_data = behavior_data['tinnitus_side'].values.astype(float)
     side_target = pu.convert_tin_to_str(side_data, 'tinnitus_side')
+    target_df = pd.DataFrame(side_target, index=ml_data_without_covariates.index,)
 
-    print('%s: Testing performance' % pu.ctime())
-    C = EEG_Classifier(n_splits=2, seed=13)
-    scores_dict, confusion_matrices, feature_df, grid_df = C.classify(
-        eeg_data=ml_data_without_covariates,
-        target_data=side_target)
-    print('%s: Finished performance testing' % pu.ctime())
+    # print('%s: Testing performance' % pu.ctime())
+    # EC = EEG_Classifier(n_splits=50, seed=13)
+    # scores_dict, confusion_matrices, feature_df, grid_df = EC.classify(
+    #     eeg_data=ml_data_without_covariates,
+    #     target_data=side_target)
+    #
+    # pu.save_xls(scores_dict, 'scores_performance_testing.xlsx')
+    # print('%s: Finished performance testing' % pu.ctime())
 
 
 if __name__ == "__main__":
