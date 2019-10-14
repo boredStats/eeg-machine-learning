@@ -64,7 +64,7 @@ class EEG_Classifier:
             x_test_cat = x_test[:, categorical_indices]
 
             # Standardization for continuous data
-            preproc = preprocessing.StandardScaler().fit(x_train_cont)
+            preproc = StandardScaler().fit(x_train_cont)
             x_train_z = preproc.transform(x_train_cont)
             x_test_z = preproc.transform(x_test_cont)
 
@@ -91,11 +91,11 @@ class EEG_Classifier:
         resampler = _create_resampler(
             type=self.resample_type,
             random_state=self.seed)
-        x_res, y_res = resample.fit_resample(eeg_data, target_data)
+        x_res, y_res = resampler.fit_resample(eeg_data, target_data)
 
-        kfolder = _splitter(
+        kfolder = self._splitter(
             type=self.kfold_type,
-            n_splits=self.n_splits
+            n_splits=self.n_splits,
             random_state=self.seed)
 
         clf = _create_classifier(
