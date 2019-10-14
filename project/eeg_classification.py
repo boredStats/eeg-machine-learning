@@ -181,7 +181,7 @@ def eeg_classify(eeg_data, target_data, target_type, model, outdir=None, resampl
     print('%s: Running classification - %s %s %s %s' % (pu.ctime(), target_type, model, cv_check, resample))
 
     # Apply k-fold splitter
-    n_splits = 10
+    n_splits = 50
     skf = model_selection.StratifiedKFold(n_splits=n_splits, random_state=seed)
     skf.get_n_splits(x_res, y_res)
 
@@ -383,8 +383,8 @@ def classification_main(covariates=True, n_iters=0):
     print('%s: Finished' % pu.ctime())
 
 
-classification_main(covariates=True, n_iters=1000)
-classification_main(covariates=False, n_iters=1000)
+classification_main(covariates=True, n_iters=0)
+classification_main(covariates=False, n_iters=0)
 
 def test_gridsearch():
     def gridsearch_pipe(cv=None):
