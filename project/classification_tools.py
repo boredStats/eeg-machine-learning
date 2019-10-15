@@ -46,19 +46,6 @@ class EEG_Classifier:
         f1 = f1_score(y_test, predicted, average=None)
         return balanced, chance, f1
 
-    def resample(
-            self,
-            x_train, x_test,
-            y_train, y_test):
-        resampler = _create_resampler(
-            type=self.resample_type,
-            random_state=self.seed)
-        x_stacked = pd.concat([x_train, x_test], axis=1)
-        y_stacked = pd.concat([y_train, y_test])
-        x_res, y_res = resampler.fit_resample(x_stacked, y_stacked)
-
-
-
     def feature_selector(
             self, x_train, x_test, y_train,
             continuous_indices=None,
@@ -104,6 +91,17 @@ class EEG_Classifier:
             type=self.kfold_type,
             n_splits=self.n_splits,
             random_state=self.seed)
+        splitter = kfolder.split(
+            X=eeg_data.values, y=target_data.values)
+
+        train_indices, test_indices = [], []
+        for i in splitter:
+            train_indices.append(i[0])
+            test_indices.append(i[1])
+
+        resampler = _create_resampler(
+            type=self.resample_type,
+            random_state=self.seed)
 
         clf = _create_classifier(
             type=self.classifier_type,
@@ -120,20 +118,21 @@ class EEG_Classifier:
 
         features_by_fold, confusion_matrices,  = {}, {}
         balanced_acc, chance_acc, f1_scores = [], [], []
-        for t, (train_idx, test_idx) in enumerate(kfolder.split(eeg_data.values, target_data)):
-            x_train, x_test = eeg_data.values[train_idx], eeg_data.values[test_idx]
-            y_train, y_test = target_data[train_idx], target_data[test_idx]
+        for t in range(len(train_indices)):
+            train_idx = train_indices[t]
+            test_idx = test_indices[t]
 
-
-            # resamp
+            x_train, x_test = eeg_data.iloc[train_idx], eeg_data.iloc[test_idx]
+            y_train, y_test = target_data.iloc[train_idx], target_data.iloc[test_idx]
+            x_train_rs, y_train_rs = resampler.fit_resample(x_train.values, np.ravel(y_train.values))
 
             x_train_fs, x_test_fs, feature_indices = self.feature_selector(
-                x_train, x_test, y_train,
+                x_train_rs, x_test, np.ravel(y_train_rs),
                 continuous_indices=cont_indices,
                 categorical_indices=cat_indices)
 
             cleaned_features = [feature_names[i] for i in feature_indices]
-            clf.fit(x_train_fs, y_train)
+            clf.fit(x_train_fs, np.ravel(y_train_rs))
             predicted = clf.predict(x_test_fs)
 
             try:
@@ -210,11 +209,11 @@ def _create_resampler(type=None, random_state=None):
             random_state=random_state)
     elif type == 'over':
         resampler = imblearn.over_sampling.RandomOverSampler(
-            sampling_strategy='not_majority',
+            sampling_strategy='minority',
             random_state=random_state)
     elif type == 'smote':
         resampler = imblearn.over_sampling.SMOTE(
-            sampling_strategy='not_majority',
+            sampling_strategy='minority',
             random_state=random_state)
 
     return resampler
@@ -270,14 +269,14 @@ def _performance_testing():
     side_target = pu.convert_tin_to_str(side_data, 'tinnitus_side')
     target_df = pd.DataFrame(side_target, index=ml_data_without_covariates.index,)
 
-    # print('%s: Testing performance' % pu.ctime())
-    # EC = EEG_Classifier(n_splits=50, seed=13)
-    # scores_dict, confusion_matrices, feature_df, grid_df = EC.classify(
-    #     eeg_data=ml_data_without_covariates,
-    #     target_data=side_target)
-    #
-    # pu.save_xls(scores_dict, 'scores_performance_testing.xlsx')
-    # print('%s: Finished performance testing' % pu.ctime())
+    print('%s: Testing performance' % pu.ctime())
+    EC = EEG_Classifier(n_splits=10, seed=13, resample_type='smote')
+    scores_dict, confusion_matrices, feature_df, grid_df = EC.classify(
+        eeg_data=ml_data_without_covariates,
+        target_data=target_df)
+
+    pu.save_xls(scores_dict, 'scores_performance_testing.xlsx')
+    print('%s: Finished performance testing' % pu.ctime())
 
 
 if __name__ == "__main__":
