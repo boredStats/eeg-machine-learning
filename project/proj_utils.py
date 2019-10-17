@@ -208,6 +208,17 @@ def save_xls(dict_df, path):
     writer.save()
 
 
+def df_or_np(data):
+    if type(data) == pd.DataFrame:
+        return True
+    elif type(data) == pd.Series:
+        return True
+    elif type(data) == np.ndarray:
+        return False
+    else:
+        raise ValueError('Data entered was neither a pandas or numpy dtype')
+
+
 def perf_testing():
     # Sandbox stuff
     print(ctime())
