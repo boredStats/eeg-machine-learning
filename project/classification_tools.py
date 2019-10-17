@@ -51,6 +51,7 @@ class EEG_Classifier:
             continuous_indices=None,
             categorical_indices=None,
             thresh="2*mean"):
+
         if continuous_indices is None:
             preproc = StandardScaler().fit(x_train)
             x_train_data = preproc.transform(x_train)
@@ -122,9 +123,9 @@ class EEG_Classifier:
             train_idx = train_indices[t]
             test_idx = test_indices[t]
 
-            x_train, x_test = eeg_data.iloc[train_idx], eeg_data.iloc[test_idx]
+            x_train, x_test = eeg_data.iloc[train_idx], eeg_data.iloc[test_idx].values
             y_train, y_test = target_data.iloc[train_idx], target_data.iloc[test_idx]
-            x_train_rs, y_train_rs = resampler.fit_resample(x_train.values, np.ravel(y_train.values))
+            x_train_rs, y_train_rs = resampler.fit_resample(x_train, np.ravel(y_train.values))
 
             x_train_fs, x_test_fs, feature_indices = self.feature_selector(
                 x_train_rs, x_test, np.ravel(y_train_rs),
@@ -140,6 +141,7 @@ class EEG_Classifier:
                 feature_df = pd.DataFrame(columns=cleaned_features)
                 feature_df.loc['Feature Importances'] = importances
             except AttributeError:
+                feature_df = None
                 pass
 
             try:
@@ -209,11 +211,11 @@ def _create_resampler(type=None, random_state=None):
             random_state=random_state)
     elif type == 'over':
         resampler = imblearn.over_sampling.RandomOverSampler(
-            sampling_strategy='minority',
+            sampling_strategy='not majority',
             random_state=random_state)
     elif type == 'smote':
         resampler = imblearn.over_sampling.SMOTE(
-            sampling_strategy='minority',
+            sampling_strategy='not majority',
             random_state=random_state)
 
     return resampler
