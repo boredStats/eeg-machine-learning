@@ -1,3 +1,5 @@
+# -*- coding: utf-8 -*-
+"""Running PCAs on connectivity data."""
 import os
 import numpy as np
 import pandas as pd
@@ -12,10 +14,13 @@ from sklearn.utils import resample
 pd.options.display.float_format = '{:.3f}'.format
 
 
-
 def pretty_pca_res(p):
     # Return pca results in a nicer way
-    cols = ['Singular values', 'Explained variance', 'Explained variance ratio']
+    cols = [
+        'Singular values',
+        'Explained variance',
+        'Explained variance ratio',
+        ]
     df = pd.DataFrame(columns=cols)
     df['Singular values'] = p.singular_values_
     df['Explained variance'] = p.explained_variance_
@@ -30,13 +35,20 @@ def pretty_pca_res(p):
     return df
 
 
-def find_n_components(data, max_n_components, step=1):
+def find_n_components(data, max_n_components=None, step=1):
     # Use cross-validation to find best number of components to use
+
+    if max_n_components is None:
+        if pu.df_or_np(data):
+            max_n_components = data.values.shape[1]
+        else:
+            max_n_components = data.shape[1]
+
     scores = []
     pca = PCA()
     for n in np.arange(1, max_n_components, step):
         pca.n_components = n
-        scores.append(np.mean(cross_val_score(p, data, cv=3, verbose=1)))
+        scores.append(np.mean(cross_val_score(pca, data, cv=3)))
 
     df = pd.DataFrame(columns=['Cross validation scores'])
     df['Cross validation scores'] = scores
@@ -54,10 +66,14 @@ def reconstruct_pca(data):
     pca.fit(X)
 
     raw_num_comp = pca.n_components_
-    Xhat = np.dot(pca.transform(X)[:, 1:raw_num_comp], pca.components_[1:raw_num_comp, :])
+    Xhat = np.dot(
+        pca.transform(X)[:, 1:raw_num_comp],
+        pca.components_[1:raw_num_comp, :]
+        )
     Xhat += mu
 
     return Xhat
+
 
 def plot_scree(pretty_res, percent=True, pvals=None, kaiser=False, fname=None):
     # Create a scree plot using pretty_pca_res output
@@ -112,6 +128,7 @@ def perm_pca(data, n_iters=1000, n_components=None):
         pca.fit(permuted_dataset)
         perm_df = pretty_pca_res(pca)
         permutation_dataframes['Permutation %04d' % n] = perm_df
+        del pca
 
     return permutation_dataframes
 
@@ -154,38 +171,57 @@ def split_connectivity_by_band(connectivity_df):
     return connectivity_by_band
 
 
-def pca_by_band(data, res_dir=None):
+def pca_by_band(data, n_iters=1000, res_dir=None):
     if res_dir is None:
         res_dir = os.path.dirname(__file__)
     conn_by_band = split_connectivity_by_band(data)
     band_results = {}
-    n_iters = 100
 
     for b in conn_by_band:
         band_df = conn_by_band[b]
         print(pu.ctime() + 'Running PCA on %s' % b)
 
-        pca = IncrementalPCA(n_components=, whiten=True)
-        pca.fit(band_df)
+        scaled_data = norm_to_ss1(band_df.values)
+        pca = IncrementalPCA(whiten=False)
+        pca.fit(scaled_data)
 
         band_res = pretty_pca_res(pca)
         band_results[b] = band_res
 
-        perm_res = perm_pca(
-            data=band_df,
-            n_iters=n_iters
-        )
-        p_values = p_from_perm_data(
-            observed_df=band_res,
-            perm_data=perm_res
-        )
+        del pca
+
+        perm_res = perm_pca(data=band_df, n_iters=n_iters)
+        p_values = p_from_perm_data(observed_df=band_res, perm_data=perm_res)
 
         plot_scree(
             band_res,
             pvals=p_values,
             percent=False,
-            fname=os.path.join
+            fname=os.path.join(res_dir, '%s_pca_scree.png' % b)
         )
+        band_res.to_excel(os.path.join(res_dir, '%s_pca_res.xlsx' % b))
+
+
+def norm_to_ss1(matrix):
+    # Alternate method for scaling, see Abdi & Williams, 2010 (PLS methods)
+    centered = matrix - np.mean(matrix, axis=0)
+    sum_of_squares = np.sum(centered ** 2, axis=0)
+
+    rescaled_matrix = np.ndarray(shape=matrix.shape)
+    for i, ss in enumerate(sum_of_squares):
+        rescaled_matrix[:, i] = centered[:, i] / np.sqrt(ss)
+
+    return rescaled_matrix
+
+
+def _test_cross_val_score_method(data):
+    pca = PCA(n_components=5, whiten=True)
+    pca.fit(data)
+    scores = pca.score_samples(data.values)
+    print(scores.shape)
+    score_df = find_n_components(data, step=5)
+    score_df.to_excel('./pca_cross_val_scores_test.xlsx')
+
 
 if __name__ == "__main__":
     print(pu.ctime() + 'Loading data')
@@ -194,41 +230,24 @@ if __name__ == "__main__":
     if not os.path.isdir(res_dir):
         os.mkdir(res_dir)
 
-    # print(pu.ctime() + 'Running grand PCA')
-    # pca = PCA(n_components=None, whiten=True)
-    # pca.fit(data)
-    # true_df = pretty_pca_res(pca)
-    #
+    band_df = split_connectivity_by_band(data)
+    delta_df = band_df['delta']
+
+    print(pu.ctime() + 'Running grand PCA')
+    pca = PCA(n_components=5, whiten=True)
+    pca.fit(data)
+    true_df = pretty_pca_res(pca)
+    
     # n_iters = 100
     #
     # perm_data = perm_pca(data, n_iters=n_iters)
     # p_values = p_from_perm_data(true_df, perm_data)
     #
-    # plot_scree(true_df, pvals=p_values, percent=False, fname='./scree_raw.png')
-    # true_df.to_excel('./grand_pca.xlsx')
+    # plot_scree(
+    #     true_df,
+    #     pvals=p_values,
+    #     percent=False,
+    #     fname=os.path.join(res_dir, 'grand_pca_scree.png'))
+    # true_df.to_excel(os.path.join(res_dir, 'grand_pca_res.xlsx'))
 
-    # print(pu.ctime() + 'Running Incremental PCA with all components')
-    # ipca = IncrementalPCA(n_components=None, whiten=True)
-    # ipca.fit(data)
-    # print(ipca.n_components_)
-    # df_raw = pretty_pca_res(ipca)
-    # print(df_raw.head())
-    # plot_scree(df_raw, percent=True, fname='./scree_raw.png')
-    # df_raw.to_excel('./ipca_raw.xlsx')
-
-    # print(pu.ctime() + 'Removing first component')
-    # data_cleaned = reconstruct_pca(data)
-    #
-    # print(pu.ctime() + 'Re-running pca on cleaned data')
-    # pca.fit(data_cleaned)
-    # df_cleaned = pretty_pca_res(pca)
-    # print(df_cleaned.head())
-    # sum_variances = np.ceil(np.sum(df_cleaned['Explained variance ratio'].values))
-    # print('Checking work - sum of variance ratios is: ' + str(sum_variances))
-    # plot_scree(df_cleaned, percent=True, fname='./scree_cleaned.png')
-    # df_cleaned.to_excel('./pca_first_component_removed.xlsx')
-    #
-    # print(pu.ctime() + 'Finding best n_components using k-fold cross-validation')
-    # crossval_df = find_n_components(data, n_components=18)
-    # crossval_df.to_excel('./crossval_res.xlsx')
-    # print(pu.ctime() + 'Finished')
+    # pca_by_band(data, n_iters=1000, res_dir=res_dir)
