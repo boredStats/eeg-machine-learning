@@ -10,6 +10,7 @@ import proj_utils as pu
 from sklearn.decomposition import PCA, IncrementalPCA
 from sklearn.model_selection import cross_val_score
 from sklearn.utils import resample
+from sklearn.preprocessing import StandardScaler, RobustScaler
 
 pd.options.display.float_format = '{:.3f}'.format
 
@@ -116,6 +117,9 @@ def plot_scree(pretty_res, percent=True, pvals=None, kaiser=False, fname=None):
 
 
 def perm_pca(data, n_iters=1000, n_components=None):
+    if n_iters == 0:
+        pass
+
     if n_components is None:
         n_components = np.min(data.shape)
     n = 0
@@ -181,13 +185,15 @@ def pca_by_band(data, n_iters=1000, res_dir=None):
         band_df = conn_by_band[b]
         print(pu.ctime() + 'Running PCA on %s' % b)
 
-        scaled_data = norm_to_ss1(band_df.values)
-        pca = IncrementalPCA(whiten=False)
+        # scaled_data = norm_to_ss1(band_df.values)
+        # scaled_data = RobustScaler().fit_transform(band_df.values)
+        scaled_data = StandardScaler().fit_transform(band_df)
+        pca = PCA(.97)
         pca.fit(scaled_data)
 
         band_res = pretty_pca_res(pca)
         band_results[b] = band_res
-
+        print(pca.n_components_)
         del pca
 
         perm_res = perm_pca(data=band_df, n_iters=n_iters)
@@ -223,6 +229,23 @@ def _test_cross_val_score_method(data):
     score_df.to_excel('./pca_cross_val_scores_test.xlsx')
 
 
+def grand_pca(data, res_dir=None):
+    if res_dir is None:
+        res_dir = os.path.dirname(__file__)
+    print(pu.ctime() + 'Running grand PCA')
+    pca = PCA(n_components=.99, whiten=True)
+    zdata = StandardScaler().fit_transform(data)
+    pca.fit(zdata)
+    print(pca.n_components_)
+    true_df = pretty_pca_res(pca)
+
+    plot_scree(
+        true_df,
+        percent=False,
+        fname=os.path.join(res_dir, 'grand_pca_scree.png'))
+    true_df.to_excel(os.path.join(res_dir, 'grand_pca_res.xlsx'))
+
+
 if __name__ == "__main__":
     print(pu.ctime() + 'Loading data')
     data = pu.load_connectivity_data()
@@ -230,24 +253,6 @@ if __name__ == "__main__":
     if not os.path.isdir(res_dir):
         os.mkdir(res_dir)
 
-    band_df = split_connectivity_by_band(data)
-    delta_df = band_df['delta']
+    grand_pca(data)
 
-    print(pu.ctime() + 'Running grand PCA')
-    pca = PCA(n_components=5, whiten=True)
-    pca.fit(data)
-    true_df = pretty_pca_res(pca)
-    
-    # n_iters = 100
-    #
-    # perm_data = perm_pca(data, n_iters=n_iters)
-    # p_values = p_from_perm_data(true_df, perm_data)
-    #
-    # plot_scree(
-    #     true_df,
-    #     pvals=p_values,
-    #     percent=False,
-    #     fname=os.path.join(res_dir, 'grand_pca_scree.png'))
-    # true_df.to_excel(os.path.join(res_dir, 'grand_pca_res.xlsx'))
-
-    # pca_by_band(data, n_iters=1000, res_dir=res_dir)
+    pca_by_band(data, n_iters=0, res_dir=res_dir)
