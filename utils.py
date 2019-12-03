@@ -15,11 +15,9 @@ def ctime():
     return datetime.datetime.fromtimestamp(t).strftime(f)
 
 
-def load_connectivity_data(currrent_data_path=None, drop_behavior=True):
-    if currrent_data_path is None:
-        currrent_data_path = './../data/data_raw_labeled.pkl'
-    # data_path = os.path.abspath(currrent_data_path)
-    raw_data = np.load(currrent_data_path, allow_pickle=True)
+def load_data(drop_behavior=False):
+    data_path = os.path.abspath('./data/data_raw_labeled.pkl')
+    raw_data = np.load(data_path, allow_pickle=True)
 
     if drop_behavior:
         behavior_variables = ['distress_TQ', 'loudness_VAS10']
