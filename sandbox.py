@@ -10,10 +10,37 @@ import pandas as pd
 import pickle as pkl
 
 from sklearn.model_selection import train_test_split, GridSearchCV
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import RobustScaler
 from sklearn.svm import SVR
 from sklearn.ensemble import GradientBoostingRegressor
 from sklearn.ensemble import ExtraTreesRegressor
 from sklearn.ensemble import VotingRegressor
+
+
+def try_pipeline():
+    x_train, x_holdout, y_train, y_holdout = create_holdout_data(
+        ratio=.10,
+        seed=13,
+        targets='distress_TQ',
+        )
+
+    scaler = RobustScaler()
+    est = SVR(kernel='rbf')
+
+    param_grid = {
+        'C': (1, 10, 100, 1000),
+        'gamma': (1e-6, 1e-5, 1e-4, 1e-3, 1e-2, 1e-1)
+        }
+
+    pipe = Pipeline([('scaler': scaler), ('estimator': est)])
+
+    grid = GridSearchCV(pipe, cv=3, param_grid=param_grid, refit=True)
+    grid.fit(x_train, y_train)
+    score = grid.score(x_holdout, y_holdout)
+    print(score)
+    with open('./data/SVR_distress_TQ.pkl', 'rb') as file:
+        pkl.dump(grid, file)
 
 
 def create_holdout_data(targets='both', ratio=.20, seed=None, outfile=None):
@@ -47,7 +74,7 @@ def create_holdout_data(targets='both', ratio=.20, seed=None, outfile=None):
     return x_train, x_holdout, y_train, y_holdout
 
 
-def main():
+def voting_test():
     # create_holdout_data(outfile='./data/holdout_split.pkl')
 
     x_train, x_holdout, y_train, y_holdout = create_holdout_data(
@@ -77,6 +104,10 @@ def main():
     gridfile = './data/distress_TQ_VotingRegressor_GridSearchCV.pkl'
     with open(gridfile, 'wb') as file:
         pkl.dump(grid, file)
+
+
+def main():
+    try_pipeline()
 
 
 main()
