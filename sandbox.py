@@ -18,7 +18,7 @@ from sklearn.ensemble import ExtraTreesRegressor
 from sklearn.ensemble import VotingRegressor
 
 
-def try_pipeline():
+def try_svr():
     x_train, x_holdout, y_train, y_holdout = create_holdout_data(
         ratio=.10,
         seed=13,
@@ -29,17 +29,68 @@ def try_pipeline():
     est = SVR(kernel='rbf')
 
     param_grid = {
-        'C': (1, 10, 100, 1000),
-        'gamma': (1e-6, 1e-5, 1e-4, 1e-3, 1e-2, 1e-1)
+        'svr__C': (1, 10, 100, 1000),
+        'svr__gamma': (1e-6, 1e-5, 1e-4, 1e-3, 1e-2, 1e-1)
         }
 
-    pipe = Pipeline([('scaler': scaler), ('estimator': est)])
+    pipe = Pipeline([('scaler', scaler), ('svr', est)])
 
-    grid = GridSearchCV(pipe, cv=3, param_grid=param_grid, refit=True)
+    grid = GridSearchCV(
+        pipe,
+        cv=3,
+        scoring='neg_mean_absolute_error',
+        param_grid=param_grid,
+        refit=True)
     grid.fit(x_train, y_train)
     score = grid.score(x_holdout, y_holdout)
     print(score)
+    with open('./data/SVR_distress_TQ.pkl', 'wb') as file:
+        pkl.dump(grid, file)
+
+
+def check_svr():
+    x_train, x_holdout, y_train, y_holdout = create_holdout_data(
+        ratio=.10,
+        seed=13,
+        targets='distress_TQ',
+        )
+
     with open('./data/SVR_distress_TQ.pkl', 'rb') as file:
+        grid = pkl.load(file)
+
+    print(grid.cv_results_)
+    # grid.set_params({'scoring': 'neg_mean_absolute_error'})
+    # mae = grid.score(x_holdout, y_holdout)
+    # print(mae)
+
+
+def try_gbr():
+    x_train, x_holdout, y_train, y_holdout = create_holdout_data(
+        ratio=.10,
+        seed=13,
+        targets='distress_TQ',
+        )
+
+    scaler = RobustScaler()
+    est = GradientBoostingRegressor(n_estimators=1000, random_state=13)
+
+    param_grid = {
+        'gbr__loss': ('ls', 'lad', 'huber'),
+        'gbr__max_features': ('auto', 'sqrt', 'log2')
+        }
+
+    pipe = Pipeline([('scaler', scaler), ('gbr', est)])
+
+    grid = GridSearchCV(
+        pipe,
+        cv=3,
+        scoring='neg_mean_absolute_error',
+        param_grid=param_grid,
+        refit=True)
+    grid.fit(x_train, y_train)
+    score = grid.score(x_holdout, y_holdout)
+    print(score)
+    with open('./data/GBR_distress_TQ.pkl', 'wb') as file:
         pkl.dump(grid, file)
 
 
@@ -107,7 +158,9 @@ def voting_test():
 
 
 def main():
-    try_pipeline()
+    # try_svr()
+    # check_svr()
+    try_gbr()
 
 
 main()
